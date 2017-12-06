@@ -1416,58 +1416,10 @@ quick:
     }
 }
 
-const char *FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w QKqk",
-           *Fritz = "r3r1k1/1pq2pp1/2p2n2/1PNn4/2QN2b1/6P1/3RPP2/2R3KB b - -";
-int Dep = 6;       
+void doit(int Dep, int Col, int split) {
 
-int main(int argc, char **argv)
-{
-    int i, j, k, Col;
-    clock_t t;
-    double sumx=0, sumx2=0, tot=0;
-
-    if(argc > 1 && !strcmp(argv[1], "-u")) {
-	argc--; argv++; noUnder = 1;
-    }
-
-    if(argc > 1 && sscanf(argv[1], "%d", &Dep)==1 && Dep > 0)
-    {   argc--; argv++; } else
-    {   printf("Usage is: perft <depth> [H<hash size>] [-<split depth>] [<FEN string>]\n");
-        printf("          <hash size> = 20 gives you 2^20 = 1M entries (16MB)\n");
-        exit(0);
-    }
-
-
-    if(argc > 1 && argv[1][0] == 'H' && sscanf(argv[1]+1, "%d", &HashSize) == 1)
-    {    HashSection = (1<<HashSize-3) - 1; HashSize = (1<<HashSize) - 2;
-         Hash = (union _bucket *) calloc(HashSize+4, sizeof(union _bucket) );
-         Hash = (union _bucket *) (((long)Hash) + 63 & ~63);
-         printf("Hash-table size = %x, Starts at %x,section = %x\n", HashSize+1, Hash, HashSection);
-         HashFlag++;
-         for(i=128; i<1040; i++) Keys[i] = rand()>>6;
-         argc--; argv++;
-    }
-
-    if(argc > 1 && argv[1][0] == '-' && sscanf(argv[1]+1, "%d", &Split) == 1)
-    {    argc--; argv++; } else Split = 0;
-
-    if(argc > 1) FEN = argv[1];
-
-    delta_init();
-
-    piece_init();
-
-    board_init(board);
-
-    Col = ReadFEN(FEN);
-
-    setup();
-                                          
-    pboard(board, 12, 0);
-
-    if(Col < 0)
-    { printf("Bad FEN '%s', error code = %d\n", FEN, Col); exit(0); }
-
+    Split = split;
+    
     printf("Quick Perft by H.G. Muller\n");
     printf("Perft mode: ");
     if(HashFlag) printf("Hash-table size = %d%cB",
@@ -1478,13 +1430,13 @@ int main(int argc, char **argv)
     f = fopen("log.txt", "a");
     fprintf(f, "perft %d -%d\n", Dep, Split);
 
-    for(i=1; i<=Dep; i++)
+    for(int i=1; i<=Dep; i++)
     {
 	int n;
         int lastPly = ((epSqr^16)<<24) + checker(Col);
-        t = clock();
+        clock_t t = clock();
         count = epcnt = xcnt = ckcnt = cascnt = promcnt = 0;
-        for(j=0; j<10; j++) accept[j] = reject[j] = 0, ttt[j] = t;
+        for(int j=0; j<10; j++) accept[j] = reject[j] = 0, ttt[j] = t;
         if(i == 1) leaf_perft(Col, lastPly, i, 1); else
         perft(Col, lastPly, i, 1);
         t = clock()-t;
@@ -1492,13 +1444,84 @@ int main(int argc, char **argv)
         printf("perft(%2d)= %s (%6.3f sec)\n", i, buf, t*(1./CLOCKS_PER_SEC));
     }
     fclose(f);
+}
 
+void setup_hash(int size) {
+    HashSize = size;
+
+    {    HashSection = (1<<HashSize-3) - 1; HashSize = (1<<HashSize) - 2;
+         Hash = (union _bucket *) calloc(HashSize+4, sizeof(union _bucket) );
+         Hash = (union _bucket *) (((long)Hash) + 63 & ~63);
+         printf("Hash-table size = %x, Starts at %x,section = %x\n", HashSize+1, Hash, HashSection);
+         HashFlag++;
+         for(int i=128; i<1040; i++) Keys[i] = rand()>>6;
+    }
+}
+
+/**
+ * @return color
+ */
+int setup_board(const char* FEN) {
+    noUnder = 1; // !! ??
+    
+    delta_init();
+
+    piece_init();
+
+    board_init(board);
+
+    int color = ReadFEN(FEN);
+
+    setup();
+                                          
+    pboard(board, 12, 0);
+
+    return color;
 }
 
 }; //class P
 
-int main(int argc, char **argv) {
+int main(int argc, char **argv)
+{
+    const char *FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w QKqk",
+               *Fritz = "r3r1k1/1pq2pp1/2p2n2/1PNn4/2QN2b1/6P1/3RPP2/2R3KB b - -";
+    int depth = 6;
+
+    if(argc > 1 && !strcmp(argv[1], "-u")) {
+	argc--; argv++;
+    }
+
+    if(argc > 1 && sscanf(argv[1], "%d", &depth)==1 && depth > 0)
+    {   argc--; argv++; } else
+    {   printf("Usage is: perft <depth> [H<hash size>] [-<split depth>] [<FEN string>]\n");
+        printf("          <hash size> = 20 gives you 2^20 = 1M entries (16MB)\n");
+        exit(0);
+    }
+
+    int hash_size = 0;
+    if(argc > 1 && argv[1][0] == 'H' && sscanf(argv[1]+1, "%d", &hash_size) == 1) {
+        argc--; argv++;
+    }
+
+    int split = 0;
+    if(argc > 1 && argv[1][0] == '-' && sscanf(argv[1]+1, "%d", &split) == 1) {
+        argc--; argv++;
+    }
+
+    if(argc > 1) FEN = argv[1];
+
     class P p;
 
-    p.main(argc, argv);
+    if(hash_size > 0) { p.setup_hash(hash_size); }
+
+    int color = p.setup_board(FEN);
+
+    if(color < 0) {
+        printf("Bad FEN '%s', error code = %d\n", FEN, color);
+        exit(0);
+    }
+
+    p.doit(depth, color, split);
 }
+
+
