@@ -43,9 +43,6 @@ union _bucket
 } *Hash, ExtraHash[XSIZE];
 
 struct P {
-    //#define PUSH(A,B) stack[msp++] = (A)+(B);
-
-
     
 int rseed = 87105015;
 unsigned long long int accept[30], reject[30], miss[30];
@@ -57,8 +54,6 @@ unsigned char
         HashFlag,
 
         /* piece-number assignment of first row, and piece types */
-        array[16] = {12, 1, 14, 11, 0, 15, 2, 13,
-                     5, 3, 4, 6, 7, 4, 3, 5},
         capts[8]  = {0, C_PPAWN, C_MPAWN, C_KNIGHT, C_BISHOP, C_ROOK, C_QUEEN, C_KING};
 
 /* overlays that interleave other piece info in pos[] */
@@ -82,7 +77,7 @@ char noUnder = 0;
 
 char Keys[1040];
 int path[100];
-int stack[1024], msp, ep1, ep2, Kmoves, Promo, Split, epSqr, HashSize, HashSection;
+int stack[1024], msp = 0, ep1, ep2, Kmoves, Promo, Split, epSqr, HashSize, HashSection;
 unsigned long long int HashKey=8729767686LL, HighKey=1234567890LL, count, epcnt, xcnt, ckcnt, cascnt, promcnt, nodecount; /* stats */
 FILE *f;
 clock_t ttt[30];
@@ -130,7 +125,7 @@ clock_t ttt[30];
      */
     void piece_init(void) {
         /* piece-number assignment of first row, and piece types */
-        static const unsigned char array[8]    = {   12,      1,     14,    11,    0,     15,      2,   13 }; // ??? What are these ???
+        static const unsigned char array[8]    = {   12,      1,     14,    11,    0,     15,      2,   13 }; // ??? What are these - offsets in kind, pos???
         static const unsigned char BACK_ROW[8] = { ROOK, KNIGHT, BISHOP, QUEEN, KING, BISHOP, KNIGHT, ROOK };
 
         /* initalize piece type and position, in initial setup */
@@ -294,7 +289,7 @@ clock_t ttt[30];
         /* now do castle rights and side to move */
         cstl[DUMMY-WHITE]=0;
         int cc = 0;
-        while(c = *p++) {
+        while((c = *p++)) {
             if(c>='0' && c<='9') continue; /* ignore move counts */
             if(c>='a' && c<='h') {
                 /* might be e.p. square */
@@ -323,8 +318,8 @@ clock_t ttt[30];
 
 
     void move_gen(int color, int lastply, int d) {
-        int i, j, k, p, v, x, z, y, r, m, h;
-        int savsp, mask, /*new,*/ forward, rank, prank, xcolor, ep_flag;
+        int i, j, k, p, v, x, z, y, /*r,*/ m, h;
+        int /*savsp,*/ mask, /*new,*/ forward, rank, prank, /*xcolor,*/ ep_flag;
         int in_check=0, checker= -1, check_dir = 20;
         int pstack[12], ppos[12], psp=0, first_move=msp;
         
@@ -378,7 +373,7 @@ clock_t ttt[30];
                                 if(!(board[y]&COLOR))
                                 {   push_move(z,y);
                                     y += forward;Promo++;
-                                    if(!(board[y]&COLOR | (rank^y)&0xF0))
+                                    if(!((board[y]&COLOR) | ((rank^y)&0xF0)))
                                         push_move(z,y|y<<24);
                                 }
                             } else
@@ -430,11 +425,11 @@ clock_t ttt[30];
         ep1 = msp;
         if(!(color&CasRights))
         {
-            if(!(board[k+RT]^DUMMY|board[k+2]^DUMMY|
-                 CasRights&color>>4))
+            if(!((board[k+RT]^DUMMY)|(board[k+RT+RT]^DUMMY)|
+                 (CasRights&color>>4)))
                 push_move(k<<8,k+2+0xB0000000+0x3000000);
-            if(!(board[k+LT]^DUMMY|board[k-2]^DUMMY|board[k-3]^DUMMY|
-                 CasRights&color>>2))
+            if(!((board[k+LT]^DUMMY)|(board[k+LT+LT]^DUMMY)|(board[k+LT+LT+LT]^DUMMY)|
+                 (CasRights&color>>2)))
                 push_move(k<<8,k-2+0xB0000000-0x4000000);
         }
 
@@ -444,10 +439,10 @@ clock_t ttt[30];
         mask = color | PAWNS;
 
         x = ep_flag+1;
-        if((board[x]&mask)==mask) push_move(x<<8,ep_flag^0x10|0xA0000000);
+        if((board[x]&mask)==mask) push_move(x<<8,(ep_flag^0x10)|0xA0000000);
 
         x = ep_flag-1;
-        if((board[x]&mask)==mask) push_move(x<<8,ep_flag^0x10|0xA0000000);
+        if((board[x]&mask)==mask) push_move(x<<8,(ep_flag^0x10)|0xA0000000);
         ep2 = msp;
 
     /* On contact check only King retreat or capture helps   */
@@ -455,14 +450,14 @@ clock_t ttt[30];
     Regular_Moves:
       if(in_check & 1)
       {
-        xcolor = color^COLOR;
+          //xcolor = color^COLOR;
         /* check for pawns, through 2 squares on board */
         m = color | PAWNS;
         z = x = checker; y = x - forward;
         
         if(!((prank^y)&0xF0)) Promo++,z |= 0xA1000000;
-        if((board[y+RT]&m)==m && pos[board[y+RT]-WHITE]) push_move(y+RT<<8,z);
-        if((board[y+LT]&m)==m && pos[board[y+LT]-WHITE]) push_move(y+LT<<8,z);
+        if((board[y+RT]&m)==m && pos[board[y+RT]-WHITE]) push_move((y+RT)<<8,z);
+        if((board[y+LT]&m)==m && pos[board[y+LT]-WHITE]) push_move((y+LT)<<8,z);
 
         for(p=LastKnight[color]; p>color-WHITE; p--)
         {
@@ -512,7 +507,7 @@ clock_t ttt[30];
             if(!(board[y]&COLOR))
             {   push_move(z,y);
                 y += forward;
-                if(!(board[y]&COLOR | (rank^y)&0xF0))
+                if(!((board[y]&COLOR) | ((rank^y)&0xF0)))
                     push_move(z,y|y<<24);        /* e.p. flag */
             }
         }
@@ -543,7 +538,7 @@ clock_t ttt[30];
           x = pos[p]; z = x<<8;
           if(x==0) continue;
 
-          if(kind[p]-3&2)
+          if((kind[p]-3)&2)
           { /* scan 4 rook rays for R and Q */
             y = x;
             do{ if(!((h=board[y+=RT])&color)) push_move(z,y); } while(!(h&COLOR));
@@ -554,7 +549,7 @@ clock_t ttt[30];
             y = x;
             do{ if(!((h=board[y+=BW])&color)) push_move(z,y); } while(!(h&COLOR));
           }
-          if(kind[p]-3&1)
+          if((kind[p]-3)&1)
           { /* scan 4 bishop rays for B and Q */
             y = x;
             do{ if(!((h=board[y+=FL])&color)) push_move(z,y); } while(!(h&COLOR));
@@ -613,8 +608,8 @@ clock_t ttt[30];
 #if 1
 int move_count(int color, int lastply, int d)
 {
-    int i, j, k, p, v, x, z, y, r, m, h;
-    int savsp, mask, /*new,*/ forward, rank, prank, xcolor, ep_flag;
+    int i, j, k, p, v, x, z, y, /*r,*/ m, h;
+    int /*savsp,*/ mask, /*new,*/ forward, rank, prank, /*xcolor,*/ ep_flag;
     int in_check=0, checker= -1, check_dir = 20;
     int pstack[12], ppos[12], psp=0, first_move=msp, myCount=0;
 
@@ -668,7 +663,7 @@ int move_count(int color, int lastply, int d)
                                 if(!(board[y]&COLOR))
                                 {   push_move(z,y);
                                     y += forward;
-                                    if(!(board[y]&COLOR | (rank^y)&0xF0))
+                                    if(!((board[y]&COLOR) | ((rank^y)&0xF0)))
                                         push_move(z,y);
                                 }
                               } else
@@ -684,7 +679,7 @@ int move_count(int color, int lastply, int d)
                                 if(!(board[y]&COLOR))
                                 {   myCount++;
                                     y += forward;
-                                    myCount += !(board[y]&COLOR | (rank^y)&0xF0);
+                                    myCount += !((board[y]&COLOR) | ((rank^y)&0xF0));
                                 }
                               } else
                               { /* diagonal pin       */
@@ -735,29 +730,29 @@ int move_count(int color, int lastply, int d)
     /* generate castlings */
         if(!(color&CasRights))
         {
-            if(!(board[k+RT]^DUMMY|board[k+2]^DUMMY|
-                 CasRights&color>>4))
+            if(!((board[k+RT]^DUMMY)|(board[k+RT+RT]^DUMMY)|
+                 (CasRights&color>>4)))
                 push_move(k<<8,k+2+0xB0000000+0x3000000);
-            if(!(board[k-1]^DUMMY|board[k-2]^DUMMY|board[k-3]^DUMMY|
-                 CasRights&color>>2))
+            if(!((board[k+LT]^DUMMY)|(board[k+LT+LT]^DUMMY)|(board[k+LT+LT+LT]^DUMMY)|
+                 (CasRights&color>>2)))
                 push_move(k<<8,k-2+0xB0000000-0x4000000);
         }
 
     /* generate e.p. captures (at most two)                  */
     /* branches are almost always take, e.p. capture is rare */
-    ep_Captures2:
+    //ep_Captures2:
         mask = color | PAWNS;
 
-        x = ep_flag+1;
-        if((board[x]&mask)==mask) push_move(x<<8,ep_flag^0x10|0xA0000000);
+        x = ep_flag+RT;
+        if((board[x]&mask)==mask) push_move(x<<8,(ep_flag^0x10)|0xA0000000);
 
         x = ep_flag+LT;
-        if((board[x]&mask)==mask) push_move(x<<8,ep_flag^0x10|0xA0000000);
+        if((board[x]&mask)==mask) push_move(x<<8,(ep_flag^0x10)|0xA0000000);
         ep2 = msp;
 
     /* On contact check only King retreat or capture helps   */
     /* Use in that case specialized recapture generator      */
-    Regular_Moves2:
+    //Regular_Moves2:
     /* Basic move generator for generating all moves */
       {
         /* First do pawns, from pawn list hanging from list head    */
@@ -790,7 +785,7 @@ int move_count(int color, int lastply, int d)
             if(!(board[y]&COLOR))
             {   myCount++;
                 y += forward;
-                myCount += !(board[y]&COLOR | (rank^y)&0xF0);
+                myCount += !((board[y]&COLOR) | ((rank^y)&0xF0));
             }
           }
         }
@@ -821,7 +816,7 @@ int move_count(int color, int lastply, int d)
           x = pos[p]; z = x<<8;
           if(x==0) continue;
 
-          if(kind[p]-3&2)
+          if((kind[p]-3)&2)
           { /* scan 4 rook rays for R and Q */
             register int h, y;
             y = x; while((h=board[y+=RT]) == DUMMY) myCount++; myCount += !(board[y]&color);
@@ -829,7 +824,7 @@ int move_count(int color, int lastply, int d)
             y = x; while((h=board[y+=FW]) == DUMMY) myCount++; myCount += !(board[y]&color);
             y = x; while((h=board[y+=BW]) == DUMMY) myCount++; myCount += !(board[y]&color);
           }
-          if(kind[p]-3&1)
+          if((kind[p]-3)&1)
           { /* scan 4 bishop rays for B and Q */
             register int h, y;
             y = x; while((h=board[y+=FL]) == DUMMY) myCount++; myCount += !(board[y]&color);
@@ -846,26 +841,26 @@ int move_count(int color, int lastply, int d)
     ep_Captures_in_Check:
         mask = color | PAWNS;
 
-        x = ep_flag+1;
-        if((board[x]&mask)==mask) push_move(x<<8,ep_flag^0x10|0xA0000000);
+        x = ep_flag+RT;
+        if((board[x]&mask)==mask) push_move(x<<8,(ep_flag^0x10)|0xA0000000);
 
         x = ep_flag+LT;
-        if((board[x]&mask)==mask) push_move(x<<8,ep_flag^0x10|0xA0000000);
+        if((board[x]&mask)==mask) push_move(x<<8,(ep_flag^0x10)|0xA0000000);
 
     /* On contact check only King retreat or capture helps   */
     /* Use in that case specialized recapture generator      */
     Regular_Moves_in_Check:
       if(in_check & 1)
       {
-        xcolor = color^COLOR;
+          //xcolor = color^COLOR;
         /* check for pawns, through 2 squares on board */
         m = color | PAWNS;
         z = x = checker; y = x - forward;
         
         if(!((prank^y)&0xF0)) {
           z |= 0xA1000000;
-          if((board[y+RT]&m)==m && pos[board[y+RT]-WHITE]) push_move(y+RT<<8,z);
-          if((board[y+LT]&m)==m && pos[board[y+LT]-WHITE]) push_move(y+LT<<8,z);
+          if((board[y+RT]&m)==m && pos[board[y+RT]-WHITE]) push_move((y+RT)<<8,z);
+          if((board[y+LT]&m)==m && pos[board[y+LT]-WHITE]) push_move((y+LT)<<8,z);
         } else {
           myCount += (board[y+RT]&m)==m && pos[board[y+RT]-WHITE];
           myCount += (board[y+LT]&m)==m && pos[board[y+LT]-WHITE];
@@ -919,7 +914,7 @@ int move_count(int color, int lastply, int d)
             if(!(board[y]&COLOR))
             {   push_move(z,y);
                 y += forward;
-                if(!(board[y]&COLOR | (rank^y)&0xF0))
+                if(!((board[y]&COLOR) | ((rank^y)&0xF0)))
                     push_move(z,y);        /* forget e.p. flag */
             }
         }
@@ -950,7 +945,7 @@ int move_count(int color, int lastply, int d)
           x = pos[p]; z = x<<8;
           if(x==0) continue;
 
-          if(kind[p]-3&2)
+          if((kind[p]-3)&2)
           { /* scan 4 rook rays for R and Q */
             y = x;
             do{ if(!((h=board[y+=RT])&color)) push_move(z,y); } while(!(h&COLOR));
@@ -961,7 +956,7 @@ int move_count(int color, int lastply, int d)
             y = x;
             do{ if(!((h=board[y+=BW])&color)) push_move(z,y); } while(!(h&COLOR));
           }
-          if(kind[p]-3&1)
+          if((kind[p]-3)&1)
           { /* scan 4 bishop rays for B and Q */
             y = x;
             do{ if(!((h=board[y+=FL])&color)) push_move(z,y); } while(!(h&COLOR));
@@ -1020,7 +1015,7 @@ int move_count(int color, int lastply, int d)
 
 int capturable(int color, int x)
 {   /* do full check for captures on square x by all opponen't pieces */
-    int i, j, k, v, y, m, p;
+    int i, /*j,*/ k, v, y, m, p;
 
     /* check for pawns, through 2 squares on board */
     v = color - 48; m = color | PAWNS;
@@ -1056,16 +1051,16 @@ int capturable(int color, int x)
 
 void leaf_perft(int color, int lastply, int depth, int d)
 {   /* recursive perft, with in-lined make/unmake */
-    int i, j, k, m, x, y, v, h, p, oldpiece, store, myCount;
-    int first_move, piece, victim, pred, succ, from, to, capt, mode,
-        pcnr, vicnr, in_check=0, checker= -1, check_dir = 20, legal;
-    int SavRights = CasRights, lep1, lep2, lkm, flag;
-    unsigned long long int ocnt=count, SavCnt;
-    union _bucket *Bucket;
+    int i, j, /*k,*/ /*m,*/ /*x, y, v,*/ h, /*p,*/ oldpiece/*, store, myCount*/;
+    int first_move, piece, victim, /*pred, succ,*/ from, to, capt, mode;//,
+        /*pcnr, vicnr, in_check=0, checker= -1, check_dir = 20, legal*/;
+    int SavRights = CasRights;//, lep1, lep2, lkm, flag;
+    //unsigned long long int ocnt=count, SavCnt;
+    //union _bucket *Bucket;
 
     TIME(17)
     first_move = msp; /* new area on move stack */
-    legal = 0;
+    //legal = 0;
     count += move_count(color, lastply, d); /* bulk count, but generate moves that need legality checking */
 
     for(i = first_move; i<msp; i++)  /* go through all moves */
@@ -1092,7 +1087,7 @@ void leaf_perft(int color, int lastply, int depth, int d)
             }else
             {   /* castling, determine Rook move  */
                 j = mode - 0xB0 + from;
-                h = from+to >> 1;
+                h = (from+to) >> 1;
                 /* abort if Rook in check         */
                 if(capturable(color^COLOR, h)) continue;
                 /* move Rook                      */
@@ -1176,26 +1171,26 @@ minor:
 
 void perft(int color, int lastply, int depth, int d)
 {   /* recursive perft, with in-lined make/unmake */
-    int i, j, k, m, x, y, v, h, p, oldpiece, store;
-    int first_move, piece, victim, pred, succ, from, to, capt, mode,
-        pcnr, vicnr, in_check=0, checker= -1, check_dir = 20, legal;
-    int SavRights = CasRights, lep1, lep2, lkm, flag, Index;
+    int i, j, /*k, m, x, y, v,*/ h, /*p,*/ oldpiece, store;
+    int first_move, piece, victim, /*pred, succ,*/ from, to, capt, mode;//,
+        //pcnr, vicnr, in_check=0, checker= -1, check_dir = 20, legal;
+    int SavRights = CasRights, /*lep1,*/ lep2, lkm, flag, Index;
     unsigned long long int ocnt=count, OldKey = HashKey, OldHKey = HighKey, SavCnt;
     union _bucket *Bucket;
 
     TIME(17)
     first_move = msp; /* new area on move stack */
-    legal = 0;
+    //legal = 0;
     move_gen(color, lastply, d); /* generate moves */
     nodecount++;
-    lep1 = ep1; lep2 = ep2; lkm = Kmoves; flag = depth == 1 && !Promo;
+    /*lep1 = ep1;*/ lep2 = ep2; lkm = Kmoves; flag = depth == 1 && !Promo;
 
     if(flag)
         count += Kmoves - first_move - ep2 + ep1; /* bulk count */
 
     for(i = flag ? ep1 : first_move; i<msp; i++)  /* go through all moves */
     {
-        if(i == lep2 & flag) { i = lkm; if(i >= msp) break; }
+        if((i == lep2) & flag) { i = lkm; if(i >= msp) break; }
 
       /* fetch move from move stack */
         from = (stack[i]>>8)&0xFF;
@@ -1229,7 +1224,7 @@ path[d] = stack[i];
             }else
             {   /* castling, determine Rook move  */
                 j = mode - 0xB0 + from;
-                h = from+to >> 1;
+                h = (from+to) >> 1;
                 /* abort if Rook in check         */
                 if(capturable(color^COLOR, h)) continue;
                 /* move Rook                      */
@@ -1263,9 +1258,9 @@ path[d] = stack[i];
                  if(depth > 9) {
                    int i = HashSection, j = depth-9;
                    while(j--) i >>= 1;
-                   Bucket =      Hash + (Index + ((int) HashKey) & i) + 7 * HashSection + i;
+                   Bucket =      Hash + ((Index + (int)HashKey) & i) + 7 * HashSection + i;
                  } else
-                   Bucket =      Hash + (Index + ((int) HashKey) & HashSection) + (depth-3) * HashSection;
+                     Bucket =      Hash + ((Index + (int)HashKey) & HashSection) + (depth-3) * HashSection;
                  if(Bucket->l.Signature1 == HighKey && Bucket->l.Signature2 == HashKey)
                  {   count += Bucket->l.longCount; accept[depth]++;
                      goto quick;
@@ -1273,8 +1268,8 @@ path[d] = stack[i];
                  reject[depth]++;
                  goto minor;
               }
-                   Bucket =      Hash + (Index + ((int) HashKey) & HashSection) + (depth-3) * HashSection;
-            } else Bucket = ExtraHash + (Index + ((int) HashKey) & XSIZE-1);
+              Bucket =      Hash + ((Index + (int)HashKey) & HashSection) + (depth-3) * HashSection;
+            } else Bucket = ExtraHash + ((Index + (int)HashKey) & (XSIZE-1));
 
             store = (HashKey>>32) & 1;
             if(Bucket->s.Signature[store] == HighKey && (Bucket->s.Extension[store] ^ (HashKey>>32)) < 2)
@@ -1393,15 +1388,15 @@ quick:
         fprintf(f, "%d. ", d);
         for(i=1; i<d; i++) {
                    printf("%c%c%c%c ",
-                   'a'+(path[i]-0x2222>> 8&7),
-                   '1'+(path[i]-0x2222>>12&7),
-                   'a'+(path[i]-0x2222    &7),
-                   '1'+(path[i]-0x2222>> 4&7) );
+                   'a'+((path[i]-0x2222)>> 8&7),
+                   '1'+((path[i]-0x2222)>>12&7),
+                   'a'+((path[i]-0x2222)    &7),
+                   '1'+((path[i]-0x2222)>> 4&7) );
                    fprintf(f, "%c%c%c%c ",
-                   'a'+(path[i]-0x2222>> 8&7),
-                   '1'+(path[i]-0x2222>>12&7),
-                   'a'+(path[i]-0x2222    &7),
-                   '1'+(path[i]-0x2222>> 4&7) );
+                   'a'+((path[i]-0x2222)>> 8&7),
+                   '1'+((path[i]-0x2222)>>12&7),
+                   'a'+((path[i]-0x2222)    &7),
+                   '1'+((path[i]-0x2222)>> 4&7) );
         }
         printf("moves = %10lld (%6.3f sec)\n", count-ocnt, (t - ttt[d])*(1./CLOCKS_PER_SEC));
         fprintf(f, "moves = %10lld (%6.3f sec)\n", count-ocnt, (t - ttt[d])*(1./CLOCKS_PER_SEC)); fflush(f);
@@ -1411,6 +1406,8 @@ quick:
 
 void doit(int Dep, int Col, int split) {
 
+    printf("RPJ - doit msp is %d\n", msp);
+    
     Split = split;
     
     printf("Quick Perft by H.G. Muller\n");
@@ -1425,7 +1422,8 @@ void doit(int Dep, int Col, int split) {
 
     for(int i=1; i<=Dep; i++)
     {
-	int n;
+        printf("RPJ - doit depth %d msp is %d\n", i, msp);
+        //int n;
         int lastPly = ((epSqr^16)<<24) + checker(Col);
         clock_t t = clock();
         count = epcnt = xcnt = ckcnt = cascnt = promcnt = 0;
@@ -1441,10 +1439,10 @@ void doit(int Dep, int Col, int split) {
 void setup_hash(int size) {
     HashSize = size;
 
-    {    HashSection = (1<<HashSize-3) - 1; HashSize = (1<<HashSize) - 2;
+    {    HashSection = (1<<(HashSize-3)) - 1; HashSize = (1<<HashSize) - 2;
          Hash = (union _bucket *) calloc(HashSize+4, sizeof(union _bucket) );
-         Hash = (union _bucket *) (((long)Hash) + 63 & ~63);
-         printf("Hash-table size = %x, Starts at %x,section = %x\n", HashSize+1, Hash, HashSection);
+         Hash = (union _bucket *) (((long)Hash + 63) & ~63);
+         printf("Hash-table size = %x, Starts at %lx,section = %x\n", HashSize+1, (long)Hash, HashSection);
          HashFlag++;
          for(int i=128; i<1040; i++) Keys[i] = rand()>>6;
     }
@@ -1454,6 +1452,7 @@ void setup_hash(int size) {
  * @return color
  */
 int setup_board(const char* FEN) {
+    printf("RPJ - setup_board msp is %d\n", msp);
     noUnder = 1; // !! ??
     
     delta_init();
@@ -1468,6 +1467,8 @@ int setup_board(const char* FEN) {
                                           
     pboard(board, 12, 0);
 
+    printf("RPJ - setup_board out msp is %d\n", msp);
+    
     return color;
 }
 
@@ -1503,6 +1504,9 @@ int main(int argc, char **argv)
     if(argc > 1) FEN = argv[1];
 
     class P p;
+
+    printf("RPJ - ctor out msp is %d\n", p.msp);
+
 
     if(hash_size > 0) { p.setup_hash(hash_size); }
 

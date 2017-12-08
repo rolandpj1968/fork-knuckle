@@ -47,8 +47,18 @@ static const int FR =  FW+RT; // forwards right
 static const int BL =  BW+LT; // backwards left
 static const int BR =  BW+RT; // backwards right
 
-static const char QUEEN_DIR[8]   = {RT, LT, FW, BW, FL, BR, FR, BL};
-static const char KING_ROSE[8]   = {RT, FR, FW, FL, LT, BL, BW, BR};
-static const char KNIGHT_ROSE[8] = {RT+FR, FW+FR, FW+FL, LT+FL, LT+BL, BW+BL, BW+BR, RT+BR};
+// Knight directions
+static const int FRR = RT+FR;
+static const int FFR = FW+FR;
+static const int FFL = FW+FL;
+static const int FLL = LT+FL;
+static const int BLL = LT+BL;
+static const int BBL = BW+BL;
+static const int BBR = BW+BR;
+static const int BRR = RT+BR;
+
+static const int QUEEN_DIR[8]   = {RT, LT, FW, BW, FL, BR, FR, BL};
+static const int KING_ROSE[8]   = {RT, FR, FW, FL, LT, BL, BW, BR};
+static const int KNIGHT_ROSE[8] = {FRR, FFR, FFL, FLL, BLL, BBL, BBR, BRR};
 
 #endif //def PERFTCPP_HPP
