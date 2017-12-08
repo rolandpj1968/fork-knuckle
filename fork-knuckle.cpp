@@ -1406,8 +1406,6 @@ quick:
 
 void doit(int Dep, int Col, int split) {
 
-    printf("RPJ - doit msp is %d\n", msp);
-    
     Split = split;
     
     printf("Quick Perft by H.G. Muller\n");
@@ -1422,8 +1420,6 @@ void doit(int Dep, int Col, int split) {
 
     for(int i=1; i<=Dep; i++)
     {
-        printf("RPJ - doit depth %d msp is %d\n", i, msp);
-        //int n;
         int lastPly = ((epSqr^16)<<24) + checker(Col);
         clock_t t = clock();
         count = epcnt = xcnt = ckcnt = cascnt = promcnt = 0;
@@ -1452,8 +1448,7 @@ void setup_hash(int size) {
  * @return color
  */
 int setup_board(const char* FEN) {
-    printf("RPJ - setup_board msp is %d\n", msp);
-    noUnder = 1; // !! ??
+    noUnder = 0; // for strict perft adherence
     
     delta_init();
 
@@ -1467,8 +1462,6 @@ int setup_board(const char* FEN) {
                                           
     pboard(board, 12, 0);
 
-    printf("RPJ - setup_board out msp is %d\n", msp);
-    
     return color;
 }
 
@@ -1504,9 +1497,6 @@ int main(int argc, char **argv)
     if(argc > 1) FEN = argv[1];
 
     class P p;
-
-    printf("RPJ - ctor out msp is %d\n", p.msp);
-
 
     if(hash_size > 0) { p.setup_hash(hash_size); }
 
