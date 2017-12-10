@@ -399,6 +399,15 @@ clock_t ttt[30];
         /* all distant checks are detected              */
     }
 
+    void get_contact_checks(int color, int lastply, int& in_check, int& checker, int& check_dir) {
+        int k = pos[color-WHITE];           /* position of my King */
+        int y = lastply&0xFF;
+        if(capt_code[k-y] & code[board[y]-WHITE] & C_CONTACT)
+        {   checker = y; in_check++;
+            check_dir = delta_vec[checker-k];
+        }
+    }
+
     void move_gen(int color, int lastply, int d) {
         int i, j, k, p, v, x, z, y, m, h;
         int mask, forward, rank, prank, ep_flag;
@@ -416,14 +425,9 @@ clock_t ttt[30];
         // Pinned-piece moves and non-constanct check detection.
         gen_pincheck_moves(color, in_check, checker, check_dir, pstack, ppos, psp);
 
-    /* determine if opponent's move put us in contact check */
-        y = lastply&0xFF;
-        if(capt_code[k-y] & code[board[y]-WHITE] & C_CONTACT)
-        {   checker = y; in_check++;
-            check_dir = delta_vec[checker-k];
-        }
+        get_contact_checks(color, lastply, in_check, checker, check_dir);
 
-    /* determine how to proceed based on check situation    */
+        /* determine how to proceed based on check situation    */
         if(in_check)
         {   /* purge moves with pinned pieces if in check   */
             msp = first_move;
@@ -432,6 +436,7 @@ clock_t ttt[30];
             if(checker == ep_flag) { ep1 = msp; goto ep_Captures; }
             goto Regular_Moves;
         }
+        
     /* generate castlings */
         ep1 = msp;
         if(!(color&CasRights))
@@ -461,7 +466,6 @@ clock_t ttt[30];
     Regular_Moves:
       if(in_check & 1)
       {
-          //xcolor = color^COLOR;
         /* check for pawns, through 2 squares on board */
         m = color | PAWNS;
         z = x = checker; y = x - forward;
