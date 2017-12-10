@@ -208,7 +208,6 @@ clock_t ttt[30];
         return 0;
     }
 
-#ifndef FEN
     int ReadFEN(const char *FEN) {
         int col;
         
@@ -314,8 +313,91 @@ clock_t ttt[30];
         CasRights = (cc & CasRights) ^ 0x7E;
         return col;
     }
-#endif
 
+    /* All pinned pieces are removed from lists.      */
+    /* All their remaining legal moves are generated. */
+    /* All distant checks are detected.               */
+    void gen_pincheck_moves(int color, int& in_check, int& checker, int& check_dir, int pstack[], int ppos[12], int& psp) {
+        /* Some general preparation */
+        int k = pos[color-WHITE];           /* position of my King */
+        int forward = 48- color;            /* forward step */
+        int rank = 0x58 - (forward>>1);     /* 4th/5th rank */
+        int prank = 0xD0 - 5*(color>>1);    /* 2nd/7th rank */
+
+        /* Pintest, starting from possible pinners in enemy slider list   */
+        /* if aiming at King & 1 piece of us in between, park this piece  */
+        /* on pin stack for rest of move generation, after generating its */
+        /* moves along the pin line.                                      */
+        for(int p=FirstSlider[COLOR-color]; p<COLOR-WHITE+FW-color; p++)
+        {   /* run through enemy slider list */
+            int j = pos[p]; /* enemy slider */
+            if(j==0) continue;  /* currently captured */
+            if(capt_code[j-k]&code[p]&C_DISTANT)
+            {   /* slider aimed at our king */
+                int v = delta_vec[j-k];
+                int x = k;     /* trace ray from our King */
+                int m; while((m=board[x+=v]) == DUMMY);
+                if(x==j)
+                {   /* distant check detected         */
+                    in_check += 2;
+                    checker = j;
+                    check_dir = v;
+                } else
+                if(m&color)
+                {   /* first on ray from King is ours */
+                    int y = x;
+                    while(board[y+=v] == DUMMY);
+                    if(y==j)
+                    {   /* our piece at x is pinned!  */
+                        /* remove from piece list     */
+                        /* and put on pin stack       */
+                        m -= WHITE;
+                        ppos[psp] = pos[m];
+                        pos[m] = 0;
+                        pstack[psp++] = m;
+                        int z = x<<8;
+
+                        if(kind[m]<3)
+                        {   /* flag promotions */
+                            if(!((prank^x)&0xF0)) z |= 0xA1000000;
+                            y = x + forward; 
+                            if(!(v&7)) /* Pawn along file */
+                            {   /* generate non-captures  */
+                                if(!(board[y]&COLOR))
+                                {   push_move(z,y);
+                                    y += forward;Promo++;
+                                    if(!((board[y]&COLOR) | ((rank^y)&0xF0)))
+                                        push_move(z,y|y<<24);
+                                }
+                            } else
+                            {   /* diagonal pin       */
+                                /* try capture pinner */
+                                if(y+RT==j) { Promo++; push_move(z,y+RT); }
+                                if(y+LT==j) { Promo++; push_move(z,y+LT); }
+                            }
+                        } else
+                        if(code[m]&capt_code[j-k]&C_DISTANT)
+                        {   /* slider moves along pin ray */
+                            y = x;
+                            do{ /* moves upto capt. pinner*/
+                                y += v;
+                                push_move(z,y);
+                            } while(y != j);
+                            y = x;
+                            while((y-=v) != k)
+                            {   /* moves towards King     */
+                                push_move(z,y);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        /* all pinned pieces are now removed from lists */
+        /* all their remaining legal moves are generated*/
+        /* all distant checks are detected              */
+    }
 
     void move_gen(int color, int lastply, int d) {
         int i, j, k, p, v, x, z, y, m, h;
@@ -330,20 +412,21 @@ clock_t ttt[30];
         prank = 0xD0 - 5*(color>>1);    /* 2nd/7th rank */
         ep_flag = lastply>>24&0xFF;
         ep1 = ep2 = msp; Promo = 0;
-        
+
+        if(1) { gen_pincheck_moves(color, in_check, checker, check_dir, pstack, ppos, psp); } else
         /* Pintest, starting from possible pinners in enemy slider list   */
         /* if aiming at King & 1 piece of us in between, park this piece  */
         /* on pin stack for rest of move generation, after generating its */
         /* moves along the pin line.                                      */
-        for(p=FirstSlider[COLOR-color]; p<COLOR-WHITE+FW-color; p++)
+        for(int p=FirstSlider[COLOR-color]; p<COLOR-WHITE+FW-color; p++)
         {   /* run through enemy slider list */
-            j = pos[p]; /* enemy slider */
+            int j = pos[p]; /* enemy slider */
             if(j==0) continue;  /* currently captured */
             if(capt_code[j-k]&code[p]&C_DISTANT)
             {   /* slider aimed at our king */
-                v = delta_vec[j-k];
-                x = k;     /* trace ray from our King */
-                while((m=board[x+=v]) == DUMMY);
+                int v = delta_vec[j-k];
+                int x = k;     /* trace ray from our King */
+                int m; while((m=board[x+=v]) == DUMMY);
                 if(x==j)
                 {   /* distant check detected         */
                     in_check += 2;
@@ -641,7 +724,7 @@ int capturable(int color, int x)
     return 0;
 }
 
-void perft_noleaf(int color, int lastply, int depth, int d)
+void perft(int color, int lastply, int depth, int d)
 {   /* recursive perft, with in-lined make/unmake */
     int i, j, /*k, m, x, y, v,*/ h, /*p,*/ oldpiece, store;
     int first_move, piece, victim, /*pred, succ,*/ from, to, capt, mode;//,
@@ -781,9 +864,7 @@ minor:
                 count++;
             }
             else {
-                perft_noleaf(COLOR-color, stack[i], depth-1, d+1);
-                // if(depth == 2) leaf_perft(COLOR-color, stack[i], depth-1, d+1);
-                // else perft_noleaf(COLOR-color, stack[i], depth-1, d+1);
+                perft(COLOR-color, stack[i], depth-1, d+1);
                 if(HashFlag)
                 {
                     if(depth > 7) { //large entry
@@ -903,7 +984,7 @@ void doit(int Dep, int Col, int split) {
         clock_t t = clock();
         count = epcnt = xcnt = ckcnt = cascnt = promcnt = 0;
         for(int j=0; j<10; j++) accept[j] = reject[j] = 0, ttt[j] = t;
-        perft_noleaf(Col, lastPly, i, 1);
+        perft(Col, lastPly, i, 1);
         t = clock()-t;
         printf("perft(%2d)= %12lld (%6.3f sec)\n", i, count, t*(1./CLOCKS_PER_SEC));
     }
