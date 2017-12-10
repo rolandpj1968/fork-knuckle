@@ -435,6 +435,47 @@ clock_t ttt[30];
         if((board[x]&mask)==mask) push_move(x<<8,(ep_flag^0x10)|0xA0000000);
     }
 
+    // On contact check only King retreat or capture helps.
+    // Use in that case specialized recapture generator.
+    void gen_contact_check_moves(int color, int checker) {
+        //int k = pos[color-WHITE];           // King position
+        int forward = 48- color;            /* forward step */
+        int prank = 0xD0 - 5*(color>>1);    /* 2nd/7th rank */
+
+        /* check for pawns, through 2 squares on board */
+        int m = color | PAWNS;
+        int z; int x; z = x = checker;
+        int y = x - forward;
+        
+        if(!((prank^y)&0xF0)) Promo++,z |= 0xA1000000;
+        if((board[y+RT]&m)==m && pos[board[y+RT]-WHITE]) push_move((y+RT)<<8,z);
+        if((board[y+LT]&m)==m && pos[board[y+LT]-WHITE]) push_move((y+LT)<<8,z);
+
+        for(int p=LastKnight[color]; p>color-WHITE; p--)
+        {
+            int k = pos[p];
+            if(k==0) continue;
+            int m = code[p];
+            int i = capt_code[k-x];
+            if(i&m) push_move(k<<8,x);
+        }
+
+        for(int p=color-WHITE+FL; p>=FirstSlider[color]; p--)
+        {
+            int k = pos[p];
+            if(k==0) continue;
+            int m = code[p];
+            int i = capt_code[k-x];
+            if(i&m)
+            {
+                int v = delta_vec[k-x];
+                y = x;
+                while(board[y+=v]==DUMMY);
+                if(y==k) push_move(k<<8,x);
+            }
+        }
+    }
+
     void move_gen(int color, int lastply, int d) {
         int i, j, k, p, v, x, z, y, m, h;
         int mask, forward, rank, prank, ep_flag;
@@ -464,7 +505,7 @@ clock_t ttt[30];
             goto Regular_Moves;
         }
         
-        ep1 = msp;
+        ep1 = msp; // Save start of en-passant/castling moves.
         
         /* generate castlings */
         gen_castling_moves(color);
@@ -473,45 +514,13 @@ clock_t ttt[30];
     ep_Captures:
         gen_ep_moves(color, ep_flag);
         
-        ep2 = msp;
+        ep2 = msp; // Save end of en-passant/castling moves.
 
     /* On contact check only King retreat or capture helps   */
     /* Use in that case specialized recapture generator      */
     Regular_Moves:
-      if(in_check & 1)
-      {
-        /* check for pawns, through 2 squares on board */
-        m = color | PAWNS;
-        z = x = checker; y = x - forward;
-        
-        if(!((prank^y)&0xF0)) Promo++,z |= 0xA1000000;
-        if((board[y+RT]&m)==m && pos[board[y+RT]-WHITE]) push_move((y+RT)<<8,z);
-        if((board[y+LT]&m)==m && pos[board[y+LT]-WHITE]) push_move((y+LT)<<8,z);
-
-        for(p=LastKnight[color]; p>color-WHITE; p--)
-        {
-            k = pos[p];
-            if(k==0) continue;
-            m = code[p];
-            i = capt_code[k-x];
-            if(i&m) push_move(k<<8,x);
-        }
-
-        for(p=color-WHITE+FL; p>=FirstSlider[color]; p--)
-        {
-            k = pos[p];
-            if(k==0) continue;
-            m = code[p];
-            i = capt_code[k-x];
-            if(i&m)
-            {
-                v = delta_vec[k-x];
-                y = x;
-                while(board[y+=v]==DUMMY);
-                if(y==k) push_move(k<<8,x);
-            }
-        }
-
+      if(in_check & 1) {
+          gen_contact_check_moves(color, checker);
       } else
     /* Basic move generator for generating all moves */
       {
