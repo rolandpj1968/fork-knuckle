@@ -437,7 +437,7 @@ clock_t ttt[30];
 
     // On contact check only King retreat or capture helps.
     // Use in that case specialized recapture generator.
-    void gen_contact_check_moves(int color, int checker) {
+    void gen_piece_moves_in_contact_check(int color, int checker) {
         int forward = 48- color;            // forward step
         int prank = 0xD0 - 5*(color>>1);    // 2nd/7th rank
 
@@ -579,6 +579,19 @@ clock_t ttt[30];
         }
     }
 
+    // Generate piece moves when not in contact check.
+    void gen_piece_moves(int color, int first_move, int& msp, int in_check, int checker, int check_dir) {
+        // Pawns
+        gen_pawn_moves(color);
+        // Knights
+        gen_knight_moves(color);
+        // Sliders
+        gen_slider_moves(color);
+        
+        // Remove illegal moves (that don't solve distant check).
+        remove_illegal_moves(color, first_move, msp, in_check, checker, check_dir);
+    }
+
     // All king moves.
     void gen_king_moves(int color) {
         int x = pos[color-WHITE]; // King position
@@ -646,19 +659,9 @@ clock_t ttt[30];
             // On contact check only King retreat or capture helps.
             // Use a specialized recapture generator in that case.
             if(in_check & 1) {
-                gen_contact_check_moves(color, checker);
+                gen_piece_moves_in_contact_check(color, checker);
             } else {
-                // Basic move generator for generating all moves.
-
-                // Pawns
-                gen_pawn_moves(color);
-                // Knights
-                gen_knight_moves(color);
-                // Sliders
-                gen_slider_moves(color);
-
-                // Remove illegal moves.
-                remove_illegal_moves(color, first_move, msp, in_check, checker, check_dir);
+                gen_piece_moves(color, first_move, msp, in_check, checker, check_dir);
             }
         }
         
