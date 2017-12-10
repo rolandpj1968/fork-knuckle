@@ -438,11 +438,10 @@ clock_t ttt[30];
     // On contact check only King retreat or capture helps.
     // Use in that case specialized recapture generator.
     void gen_contact_check_moves(int color, int checker) {
-        //int k = pos[color-WHITE];           // King position
-        int forward = 48- color;            /* forward step */
-        int prank = 0xD0 - 5*(color>>1);    /* 2nd/7th rank */
+        int forward = 48- color;            // forward step
+        int prank = 0xD0 - 5*(color>>1);    // 2nd/7th rank
 
-        /* check for pawns, through 2 squares on board */
+        // check for pawns, through 2 squares on board.
         int m = color | PAWNS;
         int z; int x; z = x = checker;
         int y = x - forward;
@@ -451,6 +450,7 @@ clock_t ttt[30];
         if((board[y+RT]&m)==m && pos[board[y+RT]-WHITE]) push_move((y+RT)<<8,z);
         if((board[y+LT]&m)==m && pos[board[y+LT]-WHITE]) push_move((y+LT)<<8,z);
 
+        // Knights
         for(int p=LastKnight[color]; p>color-WHITE; p--)
         {
             int k = pos[p];
@@ -460,6 +460,7 @@ clock_t ttt[30];
             if(i&m) push_move(k<<8,x);
         }
 
+        // Sliders
         for(int p=color-WHITE+FL; p>=FirstSlider[color]; p--)
         {
             int k = pos[p];
@@ -472,6 +473,36 @@ clock_t ttt[30];
                 y = x;
                 while(board[y+=v]==DUMMY);
                 if(y==k) push_move(k<<8,x);
+            }
+        }
+    }
+
+    // All pawn moves.
+    void gen_pawn_moves(int color) {
+        int forward = 48- color;            // forward step
+        int rank = 0x58 - (forward>>1);     // 4th/5th rank
+        int prank = 0xD0 - 5*(color>>1);    // 2nd/7th rank
+        int mask = color|0x80;              // own color, empty square, or guard
+
+        for(int p=FirstPawn[color]; p<color-WHITE+PAWNS+8; p++)
+        {
+            int x = pos[p]; if(x==0) continue;
+            int z = x<<8;
+
+            /* flag promotions */
+            if(!((prank^x)&0xF0)) Promo++,z |= 0xA1000000;
+
+            /* capture moves */
+            int y = x + forward;
+            if(!(board[y+LT]&mask)) push_move(z,y+LT);
+            if(!(board[y+RT]&mask)) push_move(z,y+RT);
+            
+            /* non-capture moves */
+            if(!(board[y]&COLOR))
+            {   push_move(z,y);
+                y += forward;
+                if(!((board[y]&COLOR) | ((rank^y)&0xF0)))
+                    push_move(z,y|y<<24);        /* e.p. flag */
             }
         }
     }
@@ -521,34 +552,11 @@ clock_t ttt[30];
     Regular_Moves:
       if(in_check & 1) {
           gen_contact_check_moves(color, checker);
-      } else
-    /* Basic move generator for generating all moves */
-      {
-        /* First do pawns, from pawn list hanging from list head    */
+      } else {
+          /* Basic move generator for generating all moves */
 
-        mask = color|0x80;  /* matches own color, empty square, or guard  */
-
-        for(p=FirstPawn[color]; p<color-WHITE+PAWNS+8; p++)
-        {
-            x = pos[p]; z = x<<8;
-            if(x==0) continue;
-
-            /* flag promotions */
-            if(!((prank^x)&0xF0)) Promo++,z |= 0xA1000000;
-
-            /* capture moves */
-            y = x + forward;
-            if(!(board[y+LT]&mask)) push_move(z,y+LT);
-            if(!(board[y+RT]&mask)) push_move(z,y+RT);
-            
-            /* non-capture moves */
-            if(!(board[y]&COLOR))
-            {   push_move(z,y);
-                y += forward;
-                if(!((board[y]&COLOR) | ((rank^y)&0xF0)))
-                    push_move(z,y|y<<24);        /* e.p. flag */
-            }
-        }
+          /* First do pawns, from pawn list hanging from list head    */
+          gen_pawn_moves(color);
 
         /* Next do Knights */
 
