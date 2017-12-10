@@ -597,6 +597,15 @@ clock_t ttt[30];
         // Mmm, why no check for move-into-check???
     }
 
+    // Put pieces that were parked onto pin stack back in lists.
+    void restore_pinned_pieces(int pstack[], int ppos[], int psp) {
+       while(psp>0) {
+           // Pop pinned piece and link in old place it remembers.
+           int m = pstack[--psp];
+           pos[m] = ppos[psp];
+        }
+    }
+
     void move_gen(int color, int lastply, int d) {
         int i, j, k, p, v, x, z, y, m, h;
         int mask, forward, rank, prank, ep_flag;
@@ -616,12 +625,12 @@ clock_t ttt[30];
 
         get_contact_checks(color, lastply, in_check, checker, check_dir);
 
-        /* determine how to proceed based on check situation    */
-        if(in_check)
-        {   /* purge moves with pinned pieces if in check   */
+        // Determine how to proceed based on check situation.
+        if(in_check) {
+            // Remove moves with pinned pieces if in check.
             msp = first_move;
 
-           if(in_check > 2) goto King_Moves; /* double check */
+            if(in_check > 2) goto King_Moves; // Double check
             if(checker == ep_flag) { ep1 = msp; goto ep_Captures; }
             goto Regular_Moves;
         }
@@ -662,14 +671,9 @@ clock_t ttt[30];
 
       gen_king_moves(color);
 
-    /* Put pieces that were parked onto pin stack back in lists */
-       while(psp>0)
-        {   /* pop pinned piece and link in old place it remembers*/
-            m = pstack[--psp];
-            pos[m] = ppos[psp];
-        }
-
-}
+      // Put pieces that were parked onto pin stack back in lists.
+      restore_pinned_pieces(pstack, ppos, psp);
+    }
 
 int capturable(int color, int x)
 {   /* do full check for captures on square x by all opponen't pieces */
