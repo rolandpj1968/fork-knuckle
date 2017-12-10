@@ -318,8 +318,8 @@ clock_t ttt[30];
 
 
     void move_gen(int color, int lastply, int d) {
-        int i, j, k, p, v, x, z, y, /*r,*/ m, h;
-        int /*savsp,*/ mask, /*new,*/ forward, rank, prank, /*xcolor,*/ ep_flag;
+        int i, j, k, p, v, x, z, y, m, h;
+        int mask, forward, rank, prank, ep_flag;
         int in_check=0, checker= -1, check_dir = 20;
         int pstack[12], ppos[12], psp=0, first_move=msp;
         
@@ -520,14 +520,14 @@ clock_t ttt[30];
             if(x==0) continue;
 
             /* always 8 direction, unroll loop to avoid branches */
-            if(!(board[x+14]&color)) push_move(z,x+14);
-            if(!(board[x+31]&color)) push_move(z,x+31);
-            if(!(board[x+33]&color)) push_move(z,x+33);
-            if(!(board[x+18]&color)) push_move(z,x+18);
-            if(!(board[x-14]&color)) push_move(z,x-14);
-            if(!(board[x-31]&color)) push_move(z,x-31);
-            if(!(board[x-33]&color)) push_move(z,x-33);
-            if(!(board[x-18]&color)) push_move(z,x-18);
+            if(!(board[x+FLL]&color)) push_move(z,x+FLL);
+            if(!(board[x+FFL]&color)) push_move(z,x+FFL);
+            if(!(board[x+FFR]&color)) push_move(z,x+FFR);
+            if(!(board[x+FRR]&color)) push_move(z,x+FRR);
+            if(!(board[x+BRR]&color)) push_move(z,x+BRR);
+            if(!(board[x+BBR]&color)) push_move(z,x+BBR);
+            if(!(board[x+BBL]&color)) push_move(z,x+BBL);
+            if(!(board[x+BLL]&color)) push_move(z,x+BLL);
         }
 
         /* now do sliding pieces */
@@ -606,24 +606,24 @@ clock_t ttt[30];
 }
 
 #if 1
-int move_count(int color, int lastply, int d)
-{
-    int i, j, k, p, v, x, z, y, /*r,*/ m, h;
-    int /*savsp,*/ mask, /*new,*/ forward, rank, prank, /*xcolor,*/ ep_flag;
-    int in_check=0, checker= -1, check_dir = 20;
-    int pstack[12], ppos[12], psp=0, first_move=msp, myCount=0;
+    int move_count(int color, int lastply, int d)
+    {
+        int i, j, k, p, v, x, z, y, m, h;
+        int mask, forward, rank, prank, ep_flag;
+        int in_check=0, checker= -1, check_dir = 20;
+        int pstack[12], ppos[12], psp=0, first_move=msp, myCount=0;
 
-    /* Some general preparation */
+        /* Some general preparation */
         k = pos[color-WHITE];           /* position of my King */
         forward = 48- color;            /* forward step */
         rank = 0x58 - (forward>>1);     /* 4th/5th rank */
         prank = 0xD0 - 5*(color>>1);    /* 2nd/7th rank */
         ep_flag = lastply>>24&0xFF;
 
-    /* Pintest, starting from possible pinners in enemy slider list   */
-    /* if aiming at King & 1 piece of us in between, park this piece  */
-    /* on pin stack for rest of move generation, after generating its */
-    /* moves along the pin line.                                      */
+        /* Pintest, starting from possible pinners in enemy slider list   */
+        /* if aiming at King & 1 piece of us in between, park this piece  */
+        /* on pin stack for rest of move generation, after generating its */
+        /* moves along the pin line.                                      */
         for(p=FirstSlider[COLOR-color]; p<COLOR-WHITE+FW-color; p++)
         {   /* run through enemy slider list */
             j = pos[p]; /* enemy slider */
@@ -639,71 +639,71 @@ int move_count(int color, int lastply, int d)
                     checker = j;
                     check_dir = v;
                 } else
-                if(m&color)
-                {   /* first on ray from King is ours */
-                    y = x;
-                    while(board[y+=v] == DUMMY);
-                    if(y==j)
-                    {   /* our piece at x is pinned!  */
-                        /* remove from piece list     */
-                        /* and put on pin stack       */
-                        m -= WHITE;
-                        ppos[psp] = pos[m];
-                        pos[m] = 0;
-                        pstack[psp++] = m;
-                        z = x<<8;
+                    if(m&color)
+                    {   /* first on ray from King is ours */
+                        y = x;
+                        while(board[y+=v] == DUMMY);
+                        if(y==j)
+                        {   /* our piece at x is pinned!  */
+                            /* remove from piece list     */
+                            /* and put on pin stack       */
+                            m -= WHITE;
+                            ppos[psp] = pos[m];
+                            pos[m] = 0;
+                            pstack[psp++] = m;
+                            z = x<<8;
 
-                        if(kind[m]<3)
-                        {   /* flag promotions */
-                           if(!((prank^x)&0xF0)) {
-			      z |= 0xA1000000;
-                              y = x + forward; 
-                              if(!(v&7)) /* Pawn along file */
-                              { /* generate non-captures  */
-                                if(!(board[y]&COLOR))
-                                {   push_move(z,y);
-                                    y += forward;
-                                    if(!((board[y]&COLOR) | ((rank^y)&0xF0)))
-                                        push_move(z,y);
+                            if(kind[m]<3)
+                            {   /* flag promotions */
+                                if(!((prank^x)&0xF0)) {
+                                    z |= 0xA1000000;
+                                    y = x + forward; 
+                                    if(!(v&7)) /* Pawn along file */
+                                    { /* generate non-captures  */
+                                        if(!(board[y]&COLOR))
+                                        {   push_move(z,y);
+                                            y += forward;
+                                            if(!((board[y]&COLOR) | ((rank^y)&0xF0)))
+                                                push_move(z,y);
+                                        }
+                                    } else
+                                    { /* diagonal pin       */
+                                        /* try capture pinner */
+                                        if(y+RT==j) push_move(z,y+RT);
+                                        if(y+LT==j) push_move(z,y+LT);
+                                    }
+                                } else {
+                                    y = x + forward; 
+                                    if(!(v&7)) /* Pawn along file */
+                                    { /* generate non-captures  */
+                                        if(!(board[y]&COLOR))
+                                        {   myCount++;
+                                            y += forward;
+                                            myCount += !((board[y]&COLOR) | ((rank^y)&0xF0));
+                                        }
+                                    } else
+                                    { /* diagonal pin       */
+                                        /* try capture pinner */
+                                        myCount += (y+RT==j);
+                                        myCount += (y+LT==j);
+                                    }
                                 }
-                              } else
-                              { /* diagonal pin       */
-                                /* try capture pinner */
-                                if(y+RT==j) push_move(z,y+RT);
-                                if(y+LT==j) push_move(z,y+LT);
-                              }
-                           } else {
-                              y = x + forward; 
-                              if(!(v&7)) /* Pawn along file */
-                              { /* generate non-captures  */
-                                if(!(board[y]&COLOR))
-                                {   myCount++;
-                                    y += forward;
-                                    myCount += !((board[y]&COLOR) | ((rank^y)&0xF0));
+                            } else
+                                if(code[m]&capt_code[j-k]&C_DISTANT)
+                                {   /* slider moves along pin ray */
+                                    y = x;
+                                    do{ /* moves upto capt. pinner*/
+                                        y += v;
+                                        myCount++;
+                                    } while(y != j);
+                                    y = x;
+                                    while((y-=v) != k)
+                                    {   /* moves towards King     */
+                                        myCount++;
+                                    }
                                 }
-                              } else
-                              { /* diagonal pin       */
-                                /* try capture pinner */
-                                myCount += (y+RT==j);
-                                myCount += (y+LT==j);
-                              }
-                           }
-                        } else
-                        if(code[m]&capt_code[j-k]&C_DISTANT)
-                        {   /* slider moves along pin ray */
-                            y = x;
-                            do{ /* moves upto capt. pinner*/
-                                y += v;
-                                myCount++;
-                            } while(y != j);
-                            y = x;
-                            while((y-=v) != k)
-                            {   /* moves towards King     */
-                                myCount++;
-                            }
                         }
                     }
-                }
             }
         }
 
@@ -711,14 +711,14 @@ int move_count(int color, int lastply, int d)
         /* all their remaining legal moves are generated*/
         /* all distant checks are detected              */
 
-    /* determine if opponent's move put us in contact check */
+        /* determine if opponent's move put us in contact check */
         y = lastply&0xFF;
         if(capt_code[k-y] & code[board[y]-WHITE] & C_CONTACT)
         {   checker = y; in_check++;
             check_dir = delta_vec[checker-k];
         }
 
-    /* determine how to proceed based on check situation    */
+        /* determine how to proceed based on check situation    */
         if(in_check)
         {   /* purge moves with pinned pieces if in check   */
             msp = first_move; myCount = 0;
@@ -727,7 +727,7 @@ int move_count(int color, int lastply, int d)
             if(checker == ep_flag) goto ep_Captures_in_Check;
             goto Regular_Moves_in_Check;
         }
-    /* generate castlings */
+        /* generate castlings */
         if(!(color&CasRights))
         {
             if(!((board[k+RT]^DUMMY)|(board[k+RT+RT]^DUMMY)|
@@ -738,9 +738,9 @@ int move_count(int color, int lastply, int d)
                 push_move(k<<8,k-2+0xB0000000-0x4000000);
         }
 
-    /* generate e.p. captures (at most two)                  */
-    /* branches are almost always take, e.p. capture is rare */
-    //ep_Captures2:
+        /* generate e.p. captures (at most two)                  */
+        /* branches are almost always take, e.p. capture is rare */
+        //ep_Captures2:
         mask = color | PAWNS;
 
         x = ep_flag+RT;
@@ -750,94 +750,94 @@ int move_count(int color, int lastply, int d)
         if((board[x]&mask)==mask) push_move(x<<8,(ep_flag^0x10)|0xA0000000);
         ep2 = msp;
 
-    /* On contact check only King retreat or capture helps   */
-    /* Use in that case specialized recapture generator      */
-    //Regular_Moves2:
-    /* Basic move generator for generating all moves */
-      {
-        /* First do pawns, from pawn list hanging from list head    */
-
-        mask = color|0x80;  /* matches own color, empty square, or guard  */
-
-        for(p=FirstPawn[color]; p<color-WHITE+PAWNS+8; p++)
+        /* On contact check only King retreat or capture helps   */
+        /* Use in that case specialized recapture generator      */
+        //Regular_Moves2:
+        /* Basic move generator for generating all moves */
         {
-          x = pos[p]; z = x<<8;
-          if(x==0) continue;
+            /* First do pawns, from pawn list hanging from list head    */
 
-            /* flag promotions */
-          if(!((prank^x)&0xF0)) {
-            z |= 0xA1000000;
+            mask = color|0x80;  /* matches own color, empty square, or guard  */
 
-            /* capture moves */
-            y = x + forward;
-            if(!(board[y+LT]&mask)) push_move(z,y+LT);
-            if(!(board[y+RT]&mask)) push_move(z,y+RT);
+            for(p=FirstPawn[color]; p<color-WHITE+PAWNS+8; p++)
+            {
+                x = pos[p]; z = x<<8;
+                if(x==0) continue;
+
+                /* flag promotions */
+                if(!((prank^x)&0xF0)) {
+                    z |= 0xA1000000;
+
+                    /* capture moves */
+                    y = x + forward;
+                    if(!(board[y+LT]&mask)) push_move(z,y+LT);
+                    if(!(board[y+RT]&mask)) push_move(z,y+RT);
             
-            /* non-capture moves (no double-push if promotion!) */
-            if(!(board[y]&COLOR)) push_move(z,y);
-          } else {
-            /* capture moves */
-            y = x + forward;
-            myCount += !(board[y+LT]&mask);
-            myCount += !(board[y+RT]&mask);
+                    /* non-capture moves (no double-push if promotion!) */
+                    if(!(board[y]&COLOR)) push_move(z,y);
+                } else {
+                    /* capture moves */
+                    y = x + forward;
+                    myCount += !(board[y+LT]&mask);
+                    myCount += !(board[y+RT]&mask);
             
-            /* non-capture moves */
-            if(!(board[y]&COLOR))
-            {   myCount++;
-                y += forward;
-                myCount += !((board[y]&COLOR) | ((rank^y)&0xF0));
+                    /* non-capture moves */
+                    if(!(board[y]&COLOR))
+                    {   myCount++;
+                        y += forward;
+                        myCount += !((board[y]&COLOR) | ((rank^y)&0xF0));
+                    }
+                }
             }
-          }
+
+            /* Next do Knights */
+
+            for(p=LastKnight[color]; p>color-WHITE; p--)
+            {
+                x = pos[p]; z = x<<8;
+                if(x==0) continue;
+
+                /* always 8 direction, unroll loop to avoid branches */
+                myCount += !(board[x+FLL]&color);
+                myCount += !(board[x+FFL]&color);
+                myCount += !(board[x+FFR]&color);
+                myCount += !(board[x+FRR]&color);
+                myCount += !(board[x+BRR]&color);
+                myCount += !(board[x+BBR]&color);
+                myCount += !(board[x+BBL]&color);
+                myCount += !(board[x+BLL]&color);
+            }
+
+            /* now do sliding pieces */
+            /* for each ray, do ray scan, and goto next ray when blocked */
+
+            for(p=color-WHITE+FL; p>=FirstSlider[color]; p--)
+            {   
+                x = pos[p]; z = x<<8;
+                if(x==0) continue;
+
+                if((kind[p]-3)&2)
+                { /* scan 4 rook rays for R and Q */
+                    register int h, y;
+                    y = x; while((h=board[y+=RT]) == DUMMY) myCount++; myCount += !(board[y]&color);
+                    y = x; while((h=board[y+=LT]) == DUMMY) myCount++; myCount += !(board[y]&color);
+                    y = x; while((h=board[y+=FW]) == DUMMY) myCount++; myCount += !(board[y]&color);
+                    y = x; while((h=board[y+=BW]) == DUMMY) myCount++; myCount += !(board[y]&color);
+                }
+                if((kind[p]-3)&1)
+                { /* scan 4 bishop rays for B and Q */
+                    register int h, y;
+                    y = x; while((h=board[y+=FL]) == DUMMY) myCount++; myCount += !(board[y]&color);
+                    y = x; while((h=board[y+=BR]) == DUMMY) myCount++; myCount += !(board[y]&color);
+                    y = x; while((h=board[y+=FR]) == DUMMY) myCount++; myCount += !(board[y]&color);
+                    y = x; while((h=board[y+=BL]) == DUMMY) myCount++; myCount += !(board[y]&color);
+                }
+            }
         }
+        goto King_Moves2;
 
-        /* Next do Knights */
-
-        for(p=LastKnight[color]; p>color-WHITE; p--)
-        {
-            x = pos[p]; z = x<<8;
-            if(x==0) continue;
-
-            /* always 8 direction, unroll loop to avoid branches */
-            myCount += !(board[x+14]&color);
-            myCount += !(board[x+31]&color);
-            myCount += !(board[x+33]&color);
-            myCount += !(board[x+18]&color);
-            myCount += !(board[x-14]&color);
-            myCount += !(board[x-31]&color);
-            myCount += !(board[x-33]&color);
-            myCount += !(board[x-18]&color);
-        }
-
-        /* now do sliding pieces */
-        /* for each ray, do ray scan, and goto next ray when blocked */
-
-        for(p=color-WHITE+FL; p>=FirstSlider[color]; p--)
-        {   
-          x = pos[p]; z = x<<8;
-          if(x==0) continue;
-
-          if((kind[p]-3)&2)
-          { /* scan 4 rook rays for R and Q */
-            register int h, y;
-            y = x; while((h=board[y+=RT]) == DUMMY) myCount++; myCount += !(board[y]&color);
-            y = x; while((h=board[y+=LT]) == DUMMY) myCount++; myCount += !(board[y]&color);
-            y = x; while((h=board[y+=FW]) == DUMMY) myCount++; myCount += !(board[y]&color);
-            y = x; while((h=board[y+=BW]) == DUMMY) myCount++; myCount += !(board[y]&color);
-          }
-          if((kind[p]-3)&1)
-          { /* scan 4 bishop rays for B and Q */
-            register int h, y;
-            y = x; while((h=board[y+=FL]) == DUMMY) myCount++; myCount += !(board[y]&color);
-            y = x; while((h=board[y+=BR]) == DUMMY) myCount++; myCount += !(board[y]&color);
-            y = x; while((h=board[y+=FR]) == DUMMY) myCount++; myCount += !(board[y]&color);
-            y = x; while((h=board[y+=BL]) == DUMMY) myCount++; myCount += !(board[y]&color);
-          }
-        }
-      }
-      goto King_Moves2;
-
-    /* generate e.p. captures (at most two)                  */
-    /* branches are almost always take, e.p. capture is rare */
+        /* generate e.p. captures (at most two)                  */
+        /* branches are almost always take, e.p. capture is rare */
     ep_Captures_in_Check:
         mask = color | PAWNS;
 
@@ -847,148 +847,148 @@ int move_count(int color, int lastply, int d)
         x = ep_flag+LT;
         if((board[x]&mask)==mask) push_move(x<<8,(ep_flag^0x10)|0xA0000000);
 
-    /* On contact check only King retreat or capture helps   */
-    /* Use in that case specialized recapture generator      */
+        /* On contact check only King retreat or capture helps   */
+        /* Use in that case specialized recapture generator      */
     Regular_Moves_in_Check:
-      if(in_check & 1)
-      {
-          //xcolor = color^COLOR;
-        /* check for pawns, through 2 squares on board */
-        m = color | PAWNS;
-        z = x = checker; y = x - forward;
+        if(in_check & 1)
+        {
+            //xcolor = color^COLOR;
+            /* check for pawns, through 2 squares on board */
+            m = color | PAWNS;
+            z = x = checker; y = x - forward;
         
-        if(!((prank^y)&0xF0)) {
-          z |= 0xA1000000;
-          if((board[y+RT]&m)==m && pos[board[y+RT]-WHITE]) push_move((y+RT)<<8,z);
-          if((board[y+LT]&m)==m && pos[board[y+LT]-WHITE]) push_move((y+LT)<<8,z);
-        } else {
-          myCount += (board[y+RT]&m)==m && pos[board[y+RT]-WHITE];
-          myCount += (board[y+LT]&m)==m && pos[board[y+LT]-WHITE];
-        }
+            if(!((prank^y)&0xF0)) {
+                z |= 0xA1000000;
+                if((board[y+RT]&m)==m && pos[board[y+RT]-WHITE]) push_move((y+RT)<<8,z);
+                if((board[y+LT]&m)==m && pos[board[y+LT]-WHITE]) push_move((y+LT)<<8,z);
+            } else {
+                myCount += (board[y+RT]&m)==m && pos[board[y+RT]-WHITE];
+                myCount += (board[y+LT]&m)==m && pos[board[y+LT]-WHITE];
+            }
 
-        for(p=LastKnight[color]; p>color-WHITE; p--)
-        {
-            k = pos[p];
-            if(k==0) continue;
-            m = code[p];
-            i = capt_code[k-x];
-            myCount += (i&m) != 0;
-        }
-
-        for(p=color-WHITE+FL; p>=FirstSlider[color]; p--)
-        {
-            k = pos[p];
-            if(k==0) continue;
-            m = code[p];
-            i = capt_code[k-x];
-            if(i&m)
+            for(p=LastKnight[color]; p>color-WHITE; p--)
             {
-                v = delta_vec[k-x];
-                y = x;
-                while(board[y+=v]==DUMMY);
-                myCount += (y==k);
+                k = pos[p];
+                if(k==0) continue;
+                m = code[p];
+                i = capt_code[k-x];
+                myCount += (i&m) != 0;
             }
-        }
 
-      } else
-    /* Basic move generator for generating all moves */
-      {
-        /* First do pawns, from pawn list hanging from list head    */
+            for(p=color-WHITE+FL; p>=FirstSlider[color]; p--)
+            {
+                k = pos[p];
+                if(k==0) continue;
+                m = code[p];
+                i = capt_code[k-x];
+                if(i&m)
+                {
+                    v = delta_vec[k-x];
+                    y = x;
+                    while(board[y+=v]==DUMMY);
+                    myCount += (y==k);
+                }
+            }
 
-        mask = color|0x80;  /* matches own color, empty square, or guard  */
-
-        for(p=FirstPawn[color]; p<color-WHITE+PAWNS+8; p++)
+        } else
+            /* Basic move generator for generating all moves */
         {
-            x = pos[p]; z = x<<8;
-            if(x==0) continue;
+            /* First do pawns, from pawn list hanging from list head    */
 
-            /* flag promotions */
-            if(!((prank^x)&0xF0)) Promo++,z |= 0xA1000000;
+            mask = color|0x80;  /* matches own color, empty square, or guard  */
 
-            /* capture moves */
-            y = x + forward;
-            if(!(board[y+LT]&mask)) push_move(z,y+LT);
-            if(!(board[y+RT]&mask)) push_move(z,y+RT);
+            for(p=FirstPawn[color]; p<color-WHITE+PAWNS+8; p++)
+            {
+                x = pos[p]; z = x<<8;
+                if(x==0) continue;
+
+                /* flag promotions */
+                if(!((prank^x)&0xF0)) Promo++,z |= 0xA1000000;
+
+                /* capture moves */
+                y = x + forward;
+                if(!(board[y+LT]&mask)) push_move(z,y+LT);
+                if(!(board[y+RT]&mask)) push_move(z,y+RT);
             
-            /* non-capture moves */
-            if(!(board[y]&COLOR))
-            {   push_move(z,y);
-                y += forward;
-                if(!((board[y]&COLOR) | ((rank^y)&0xF0)))
-                    push_move(z,y);        /* forget e.p. flag */
+                /* non-capture moves */
+                if(!(board[y]&COLOR))
+                {   push_move(z,y);
+                    y += forward;
+                    if(!((board[y]&COLOR) | ((rank^y)&0xF0)))
+                        push_move(z,y);        /* forget e.p. flag */
+                }
             }
-        }
 
-        /* Next do Knights */
+            /* Next do Knights */
 
-        for(p=LastKnight[color]; p>color-WHITE; p--)
-        {
-            x = pos[p]; z = x<<8;
-            if(x==0) continue;
+            for(p=LastKnight[color]; p>color-WHITE; p--)
+            {
+                x = pos[p]; z = x<<8;
+                if(x==0) continue;
 
-            /* always 8 direction, unroll loop to avoid branches */
-            if(!(board[x+14]&color)) push_move(z,x+14);
-            if(!(board[x+31]&color)) push_move(z,x+31);
-            if(!(board[x+33]&color)) push_move(z,x+33);
-            if(!(board[x+18]&color)) push_move(z,x+18);
-            if(!(board[x-14]&color)) push_move(z,x-14);
-            if(!(board[x-31]&color)) push_move(z,x-31);
-            if(!(board[x-33]&color)) push_move(z,x-33);
-            if(!(board[x-18]&color)) push_move(z,x-18);
-        }
-
-        /* now do sliding pieces */
-        /* for each ray, do ray scan, and goto next ray when blocked */
-
-        for(p=color-WHITE+FL; p>=FirstSlider[color]; p--)
-        {   
-          x = pos[p]; z = x<<8;
-          if(x==0) continue;
-
-          if((kind[p]-3)&2)
-          { /* scan 4 rook rays for R and Q */
-            y = x;
-            do{ if(!((h=board[y+=RT])&color)) push_move(z,y); } while(!(h&COLOR));
-            y = x;
-            do{ if(!((h=board[y+=LT])&color)) push_move(z,y); } while(!(h&COLOR));
-            y = x;
-            do{ if(!((h=board[y+=FW])&color)) push_move(z,y); } while(!(h&COLOR));
-            y = x;
-            do{ if(!((h=board[y+=BW])&color)) push_move(z,y); } while(!(h&COLOR));
-          }
-          if((kind[p]-3)&1)
-          { /* scan 4 bishop rays for B and Q */
-            y = x;
-            do{ if(!((h=board[y+=FL])&color)) push_move(z,y); } while(!(h&COLOR));
-            y = x;
-            do{ if(!((h=board[y+=BR])&color)) push_move(z,y); } while(!(h&COLOR));
-            y = x;
-            do{ if(!((h=board[y+=FR])&color)) push_move(z,y); } while(!(h&COLOR));
-            y = x;
-            do{ if(!((h=board[y+=BL])&color)) push_move(z,y); } while(!(h&COLOR));
-          }
-        }
-
-    /* remove moves that don't solve distant check by          */
-    /* capturing checker or interposing on check ray           */
-        if(in_check)
-        for(i=first_move; i<msp; i++)  /* go through all moves */
-        {
-            if(delta_vec[(j=stack[i]&0xFF)-k] != check_dir)
-                stack[i--] = stack[--msp];
-            else
-            {   /* on check ray, could block or capture checker*/
-                x = k;
-                do{
-                    x += check_dir;
-                    if(x==j) break;
-                } while(x != checker);
-               if(x!=j) {  stack[i--] = stack[--msp]; }
+                /* always 8 direction, unroll loop to avoid branches */
+                if(!(board[x+FLL]&color)) push_move(z,x+FLL);
+                if(!(board[x+FFL]&color)) push_move(z,x+FFL);
+                if(!(board[x+FFR]&color)) push_move(z,x+FFR);
+                if(!(board[x+FRR]&color)) push_move(z,x+FRR);
+                if(!(board[x+BRR]&color)) push_move(z,x+BRR);
+                if(!(board[x+BBR]&color)) push_move(z,x+BBR);
+                if(!(board[x+BBL]&color)) push_move(z,x+BBL);
+                if(!(board[x+BLL]&color)) push_move(z,x+BLL);
             }
-        }
-      }
 
-    /* Generate moves with the always present King */
+            /* now do sliding pieces */
+            /* for each ray, do ray scan, and goto next ray when blocked */
+
+            for(p=color-WHITE+FL; p>=FirstSlider[color]; p--)
+            {   
+                x = pos[p]; z = x<<8;
+                if(x==0) continue;
+
+                if((kind[p]-3)&2)
+                { /* scan 4 rook rays for R and Q */
+                    y = x;
+                    do{ if(!((h=board[y+=RT])&color)) push_move(z,y); } while(!(h&COLOR));
+                    y = x;
+                    do{ if(!((h=board[y+=LT])&color)) push_move(z,y); } while(!(h&COLOR));
+                    y = x;
+                    do{ if(!((h=board[y+=FW])&color)) push_move(z,y); } while(!(h&COLOR));
+                    y = x;
+                    do{ if(!((h=board[y+=BW])&color)) push_move(z,y); } while(!(h&COLOR));
+                }
+                if((kind[p]-3)&1)
+                { /* scan 4 bishop rays for B and Q */
+                    y = x;
+                    do{ if(!((h=board[y+=FL])&color)) push_move(z,y); } while(!(h&COLOR));
+                    y = x;
+                    do{ if(!((h=board[y+=BR])&color)) push_move(z,y); } while(!(h&COLOR));
+                    y = x;
+                    do{ if(!((h=board[y+=FR])&color)) push_move(z,y); } while(!(h&COLOR));
+                    y = x;
+                    do{ if(!((h=board[y+=BL])&color)) push_move(z,y); } while(!(h&COLOR));
+                }
+            }
+
+            /* remove moves that don't solve distant check by          */
+            /* capturing checker or interposing on check ray           */
+            if(in_check)
+                for(i=first_move; i<msp; i++)  /* go through all moves */
+                {
+                    if(delta_vec[(j=stack[i]&0xFF)-k] != check_dir)
+                        stack[i--] = stack[--msp];
+                    else
+                    {   /* on check ray, could block or capture checker*/
+                        x = k;
+                        do{
+                            x += check_dir;
+                            if(x==j) break;
+                        } while(x != checker);
+                        if(x!=j) {  stack[i--] = stack[--msp]; }
+                    }
+                }
+        }
+
+        /* Generate moves with the always present King */
     King_Moves2:
         x = pos[color-WHITE]; z = x<<8;
         Kmoves = msp;
@@ -1009,8 +1009,8 @@ int move_count(int color, int lastply, int d)
             m = pstack[--psp];
             pos[m] = ppos[psp];
         }
-      return myCount;
-}
+        return myCount;
+    }
 #endif
 
 int capturable(int color, int x)
@@ -1404,6 +1404,248 @@ quick:
     }
 }
 
+void perft_noleaf(int color, int lastply, int depth, int d)
+{   /* recursive perft, with in-lined make/unmake */
+    int i, j, /*k, m, x, y, v,*/ h, /*p,*/ oldpiece, store;
+    int first_move, piece, victim, /*pred, succ,*/ from, to, capt, mode;//,
+        //pcnr, vicnr, in_check=0, checker= -1, check_dir = 20, legal;
+    int SavRights = CasRights, /*lep1,*/ lep2, lkm, flag, Index;
+    unsigned long long int ocnt=count, OldKey = HashKey, OldHKey = HighKey, SavCnt;
+    union _bucket *Bucket;
+
+    TIME(17)
+    first_move = msp; /* new area on move stack */
+    //legal = 0;
+    move_gen(color, lastply, d); /* generate moves */
+    nodecount++;
+    /*lep1 = ep1;*/ lep2 = ep2; lkm = Kmoves; flag = depth == 1 && !Promo;
+
+    if(flag)
+        count += Kmoves - first_move - ep2 + ep1; /* bulk count */
+
+    for(i = flag ? ep1 : first_move; i<msp; i++)  /* go through all moves */
+    {
+        if((i == lep2) & flag) { i = lkm; if(i >= msp) break; }
+
+      /* fetch move from move stack */
+        from = (stack[i]>>8)&0xFF;
+        to = capt = stack[i]&0xFF;
+        mode = (unsigned int)stack[i]>>24;
+path[d] = stack[i];
+        piece  = board[from];
+
+        Index = 0;
+        if(mode)
+        {   /* e.p. or castling, usually skipped  */
+            /* e.p.:shift capture square one rank */
+            if(mode < 0xA0)
+            {   if(((board[to+RT]^piece) & (COLOR|PAWNS)) == COLOR ||
+                   ((board[to+LT]^piece) & (COLOR|PAWNS)) == COLOR)
+                    Index = mode * 76265;
+            } else
+            if(mode == 0xA0) capt ^= 0x10; else
+            if(mode == 0xA1)
+            {   /* Promotion. Shuffle piece list :( */
+                oldpiece = piece; pos[piece-WHITE]=0;
+                /* set up for new Queen first */
+                piece = --FirstSlider[color]+WHITE;
+                kind[piece-WHITE] = QUEEN;
+                code[piece-WHITE] = C_QUEEN;
+                Zob[piece-WHITE]  = Keys + 128*QUEEN + (color&BLACK)/8 - 0x22;
+                pos[piece-WHITE]  = from;
+                HashKey ^= Zobrist(piece, from) ^ Zobrist(oldpiece, from);
+                HighKey ^= Zobrist(piece, from+8) ^ Zobrist(oldpiece, from+8);
+                Index += 14457159; /* prevent hits by non-promotion moves */
+            }else
+            {   /* castling, determine Rook move  */
+                j = mode - 0xB0 + from;
+                h = (from+to) >> 1;
+                /* abort if Rook in check         */
+                if(capturable(color^COLOR, h)) continue;
+                /* move Rook                      */
+                board[h] = board[j];
+                board[j] = DUMMY;
+                pos[board[h]-WHITE] = h;
+                HashKey ^= Zobrist(board[h],h) ^ Zobrist(board[h],j);
+                HighKey ^= Zobrist(board[h],h+8) ^ Zobrist(board[h],j+8);
+            }
+        }
+
+        victim = board[capt];
+        CasRights |= cstl[piece-WHITE] | cstl[victim-WHITE];
+
+        if(depth==1)
+        {   if(piece != color && mode < 0xA0)
+            {   count++; goto quick; }
+        } else if(HashFlag)
+        {
+            SavCnt = count;
+            HashKey ^= Zobrist(piece,from)  /* key update for normal move */
+                     ^ Zobrist(piece,to)
+                     ^ Zobrist(victim,capt);
+            HighKey ^= Zobrist(piece,from+8)  /* key update for normal move */
+                     ^ Zobrist(piece,to+8)
+                     ^ Zobrist(victim,capt+8);
+            Index += (CasRights << 4) +color*919581;
+            if(depth>2) {
+              path[d] = stack[i];
+              if(depth > 7) { // the count will not fit in 32 bits
+                 if(depth > 9) {
+                   int i = HashSection, j = depth-9;
+                   while(j--) i >>= 1;
+                   Bucket =      Hash + ((Index + (int)HashKey) & i) + 7 * HashSection + i;
+                 } else
+                     Bucket =      Hash + ((Index + (int)HashKey) & HashSection) + (depth-3) * HashSection;
+                 if(Bucket->l.Signature1 == HighKey && Bucket->l.Signature2 == HashKey)
+                 {   count += Bucket->l.longCount; accept[depth]++;
+                     goto quick;
+                 }
+                 reject[depth]++;
+                 goto minor;
+              }
+              Bucket =      Hash + ((Index + (int)HashKey) & HashSection) + (depth-3) * HashSection;
+            } else Bucket = ExtraHash + ((Index + (int)HashKey) & (XSIZE-1));
+
+            store = (HashKey>>32) & 1;
+            if(Bucket->s.Signature[store] == HighKey && (Bucket->s.Extension[store] ^ (HashKey>>32)) < 2)
+             {   count += Bucket->s.Count[store]; accept[depth]++;
+                Bucket->s.Extension[store] &= ~1;
+                Bucket->s.Extension[store^1] |= 1;
+                goto quick;
+             }
+            if(Bucket->s.Signature[store^1] == HighKey && (Bucket->s.Extension[store^1] ^ (HashKey>>32)) < 2)
+            {   count += Bucket->s.Count[store^1]; accept[depth]++;
+                Bucket->s.Extension[store^1] &= ~1;
+                Bucket->s.Extension[store] |= 1;
+                goto quick;
+            }
+            reject[depth]++; // miss;
+            if(Bucket->s.Extension[store^1] & 1) store ^= 1;
+        }
+minor:
+      /* perform move, in piece list and on board */
+        /* update board position */
+        board[capt] = board[from] = DUMMY;
+        board[to] = piece;
+
+        /* update piece location in piece list    */
+        pos[piece-WHITE] = to;
+
+
+        /* remove captured piece from piece list  */
+        pos[victim-WHITE] = 0;
+
+        if((piece != color && mode != 0xA0) ||
+                 !capturable(color^COLOR, pos[color-WHITE]))
+        {
+      /* recursion or count end leaf */
+            if(depth == 1 ) {
+                nodecount++;
+                count++;
+            }
+            else {
+                perft_noleaf(COLOR-color, stack[i], depth-1, d+1);
+                // if(depth == 2) leaf_perft(COLOR-color, stack[i], depth-1, d+1);
+                // else perft_noleaf(COLOR-color, stack[i], depth-1, d+1);
+                if(HashFlag)
+                {
+                    if(depth > 7) { //large entry
+                        Bucket->l.Signature1 = HighKey;
+                        Bucket->l.Signature2 = HashKey;
+                        Bucket->l.longCount  = count - SavCnt;
+                    } else { // packed entry
+                        Bucket->s.Signature[store] = HighKey;
+                        Bucket->s.Extension[store] = (HashKey>>32) & ~1; // erase low bit
+                        Bucket->s.Count[store]     = count - SavCnt;
+                    }
+                }
+            }
+        }
+      /* retract move */
+
+        /* restore piece list */
+        pos[piece-WHITE] = from;
+        pos[victim-WHITE] = capt;
+
+        /* restore board */
+        board[to] = DUMMY;      /* restore board  */
+        board[capt] = victim;
+        board[from] = piece;
+
+quick:
+        if((unsigned int) stack[i]>=0xA1000000)   /* was castling or prom */
+        {   if(mode==0xA1)
+            {
+                if(noUnder) {
+                    FirstSlider[color]++;
+                    piece =oldpiece;
+                    pos[piece-WHITE] = from;
+                    board[from] = piece;
+                } else
+                if(--kind[piece-WHITE] >= KNIGHT)
+                {
+                    HashKey ^= Zobrist(piece, to);
+                    HighKey ^= Zobrist(piece, to+8);
+                    if(kind[piece-WHITE] == KNIGHT)
+                    {   /* Knight must be put in Knight list */
+                        FirstSlider[color]++;
+                        piece = ++LastKnight[color]+WHITE;
+                        pos[piece-WHITE]  = from;
+                        kind[piece-WHITE] = KNIGHT;
+                        Zob[piece-WHITE]  = Keys + 128*KNIGHT
+                                                 + (color&BLACK)/8 - 0x22;
+                    } else Zob[piece-WHITE] -= 128;
+                    code[piece-WHITE] = capts[kind[piece-WHITE]];
+                    HashKey ^= Zobrist(piece, to);
+                    HighKey ^= Zobrist(piece, to+8);
+                    goto minor; /* try minor promotion */
+                } else
+                {   /* All promotions tried, demote to Pawn again */
+                    kind[piece-WHITE] = QUEEN; /* put Q back for hash store */
+                    piece = oldpiece; LastKnight[color]--;
+                    pos[piece-WHITE] = from;
+                    board[from] = piece;
+                }
+            } else
+            {   /* undo Rook move */
+                board[j] = board[h];
+                board[h] = DUMMY;
+                pos[board[j]-WHITE] = j;
+            }
+        }
+
+        HashKey = OldKey;
+        HighKey = OldHKey;
+        CasRights = SavRights;
+
+    }
+
+    msp = first_move; /* throw away moves */
+
+    /* For split perft uncomment the following line */
+    if(d <= Split && d > 1)
+    {
+        int i; clock_t t = clock();
+        printf("%d. ", d);
+        fprintf(f, "%d. ", d);
+        for(i=1; i<d; i++) {
+                   printf("%c%c%c%c ",
+                   'a'+((path[i]-0x2222)>> 8&7),
+                   '1'+((path[i]-0x2222)>>12&7),
+                   'a'+((path[i]-0x2222)    &7),
+                   '1'+((path[i]-0x2222)>> 4&7) );
+                   fprintf(f, "%c%c%c%c ",
+                   'a'+((path[i]-0x2222)>> 8&7),
+                   '1'+((path[i]-0x2222)>>12&7),
+                   'a'+((path[i]-0x2222)    &7),
+                   '1'+((path[i]-0x2222)>> 4&7) );
+        }
+        printf("moves = %10lld (%6.3f sec)\n", count-ocnt, (t - ttt[d])*(1./CLOCKS_PER_SEC));
+        fprintf(f, "moves = %10lld (%6.3f sec)\n", count-ocnt, (t - ttt[d])*(1./CLOCKS_PER_SEC)); fflush(f);
+        ttt[d] = t;
+    }
+}
+
 void doit(int Dep, int Col, int split) {
 
     Split = split;
@@ -1424,8 +1666,12 @@ void doit(int Dep, int Col, int split) {
         clock_t t = clock();
         count = epcnt = xcnt = ckcnt = cascnt = promcnt = 0;
         for(int j=0; j<10; j++) accept[j] = reject[j] = 0, ttt[j] = t;
-        if(i == 1) leaf_perft(Col, lastPly, i, 1); else
-        perft(Col, lastPly, i, 1);
+        if(i == 1) {
+            leaf_perft(Col, lastPly, i, 1);
+        } else {
+            //perft(Col, lastPly, i, 1);
+            perft_noleaf(Col, lastPly, i, 1);
+        }
         t = clock()-t;
         printf("perft(%2d)= %12lld (%6.3f sec)\n", i, count, t*(1./CLOCKS_PER_SEC));
     }
