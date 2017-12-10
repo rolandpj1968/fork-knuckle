@@ -399,13 +399,40 @@ clock_t ttt[30];
         /* all distant checks are detected              */
     }
 
+    // Determine if there are contact checks.
     void get_contact_checks(int color, int lastply, int& in_check, int& checker, int& check_dir) {
-        int k = pos[color-WHITE];           /* position of my King */
+        int k = pos[color-WHITE];           // King position
         int y = lastply&0xFF;
+
         if(capt_code[k-y] & code[board[y]-WHITE] & C_CONTACT)
         {   checker = y; in_check++;
             check_dir = delta_vec[checker-k];
         }
+    }
+
+    // Generate castling moves.
+    void gen_castling_moves(int color) {
+        if(!(color&CasRights)) {
+            int k = pos[color-WHITE];           // King position
+            
+            if(!((board[k+RT]^DUMMY)|(board[k+RT+RT]^DUMMY)|
+                 (CasRights&color>>4)))
+                push_move(k<<8,k+2+0xB0000000+0x3000000);
+            if(!((board[k+LT]^DUMMY)|(board[k+LT+LT]^DUMMY)|(board[k+LT+LT+LT]^DUMMY)|
+                 (CasRights&color>>2)))
+                push_move(k<<8,k-2+0xB0000000-0x4000000);
+        }
+    }
+
+    // Generate en-passant captures (at most two)
+    void gen_ep_moves(int color, int ep_flag) {
+        int mask = color | PAWNS;
+
+        int x = ep_flag+1;
+        if((board[x]&mask)==mask) push_move(x<<8,(ep_flag^0x10)|0xA0000000);
+
+        x = ep_flag-1;
+        if((board[x]&mask)==mask) push_move(x<<8,(ep_flag^0x10)|0xA0000000);
     }
 
     void move_gen(int color, int lastply, int d) {
@@ -432,33 +459,20 @@ clock_t ttt[30];
         {   /* purge moves with pinned pieces if in check   */
             msp = first_move;
 
-            if(in_check > 2) goto King_Moves; /* double check */
+           if(in_check > 2) goto King_Moves; /* double check */
             if(checker == ep_flag) { ep1 = msp; goto ep_Captures; }
             goto Regular_Moves;
         }
         
-    /* generate castlings */
         ep1 = msp;
-        if(!(color&CasRights))
-        {
-            if(!((board[k+RT]^DUMMY)|(board[k+RT+RT]^DUMMY)|
-                 (CasRights&color>>4)))
-                push_move(k<<8,k+2+0xB0000000+0x3000000);
-            if(!((board[k+LT]^DUMMY)|(board[k+LT+LT]^DUMMY)|(board[k+LT+LT+LT]^DUMMY)|
-                 (CasRights&color>>2)))
-                push_move(k<<8,k-2+0xB0000000-0x4000000);
-        }
+        
+        /* generate castlings */
+        gen_castling_moves(color);
 
     /* generate e.p. captures (at most two)                  */
-    /* branches are almost always take, e.p. capture is rare */
     ep_Captures:
-        mask = color | PAWNS;
-
-        x = ep_flag+1;
-        if((board[x]&mask)==mask) push_move(x<<8,(ep_flag^0x10)|0xA0000000);
-
-        x = ep_flag-1;
-        if((board[x]&mask)==mask) push_move(x<<8,(ep_flag^0x10)|0xA0000000);
+        gen_ep_moves(color, ep_flag);
+        
         ep2 = msp;
 
     /* On contact check only King retreat or capture helps   */
