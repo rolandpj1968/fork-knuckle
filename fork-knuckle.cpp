@@ -314,34 +314,57 @@ clock_t ttt[30];
         return col;
     }
 
-    /* All pinned pieces are removed from lists.      */
-    /* All their remaining legal moves are generated. */
-    /* All distant checks are detected.               */
-    void gen_pincheck_moves(int color, int& in_check, int& checker, int& check_dir, int pstack[], int ppos[12], int& psp) {
+    struct CheckData {
+        static const int CONTACT_CHECK = 1;
+        static const int DISTANT_CHECK = 2;
+        
+        int in_check = 0, checker = -1, check_dir = 20;
+
+        int in_contact_check() { return in_check & CONTACT_CHECK; }
+
+        int in_double_check() { return in_check > DISTANT_CHECK; }
+
+        // At most two distant checkers.
+        void add_distant_check(int piece, int dir) {
+            in_check += DISTANT_CHECK;
+            checker = piece;
+            check_dir = dir;
+        }
+
+        // At most one contact checker.
+        void add_contact_check(int piece, int dir) {
+            in_check |= CONTACT_CHECK;
+            checker = piece;
+            check_dir = dir;
+        }
+    };
+
+    // All pinned pieces are removed from lists.
+    // All their remaining legal moves are generated.
+    // All distant checks are detected.
+    void gen_pincheck_moves(int color, CheckData& check_data, int pstack[], int ppos[], int& psp) {
         /* Some general preparation */
         int k = pos[color-WHITE];           /* position of my King */
         int forward = 48- color;            /* forward step */
         int rank = 0x58 - (forward>>1);     /* 4th/5th rank */
         int prank = 0xD0 - 5*(color>>1);    /* 2nd/7th rank */
 
-        /* Pintest, starting from possible pinners in enemy slider list   */
-        /* if aiming at King & 1 piece of us in between, park this piece  */
-        /* on pin stack for rest of move generation, after generating its */
-        /* moves along the pin line.                                      */
+        // Pintest, starting from possible pinners in enemy slider list.
+        // If aiming at King & 1 piece of us in between, park this piece
+        //   on pin stack for rest of move generation, after generating its
+        //   moves along the pin line.
         for(int p=FirstSlider[COLOR-color]; p<COLOR-WHITE+FW-color; p++)
         {   /* run through enemy slider list */
-            int j = pos[p]; /* enemy slider */
+            int j = pos[p]; // enemy slider
             if(j==0) continue;  /* currently captured */
             if(capt_code[j-k]&code[p]&C_DISTANT)
             {   /* slider aimed at our king */
                 int v = delta_vec[j-k];
                 int x = k;     /* trace ray from our King */
                 int m; while((m=board[x+=v]) == DUMMY);
-                if(x==j)
-                {   /* distant check detected         */
-                    in_check += 2;
-                    checker = j;
-                    check_dir = v;
+                if(x==j) {
+                    // Distant check detected
+                    check_data.add_distant_check(j, v);
                 } else
                 if(m&color)
                 {   /* first on ray from King is ours */
@@ -394,19 +417,18 @@ clock_t ttt[30];
             }
         }
 
-        /* all pinned pieces are now removed from lists */
-        /* all their remaining legal moves are generated*/
-        /* all distant checks are detected              */
+        // All pinned pieces are now removed from lists.
+        // All their remaining legal moves are generated.
+        // All distant checks are detected.
     }
 
     // Determine if there are contact checks.
-    void get_contact_checks(int color, int lastply, int& in_check, int& checker, int& check_dir) {
+    void get_contact_checks(int color, int lastply, CheckData& check_data) {
         int k = pos[color-WHITE];           // King position
         int y = lastply&0xFF;
 
-        if(capt_code[k-y] & code[board[y]-WHITE] & C_CONTACT)
-        {   checker = y; in_check++;
-            check_dir = delta_vec[checker-k];
+        if(capt_code[k-y] & code[board[y]-WHITE] & C_CONTACT) {
+            check_data.add_contact_check(y, delta_vec[y-k]);
         }
     }
 
@@ -558,21 +580,21 @@ clock_t ttt[30];
     }
 
     // Remove moves that don't solve distant check by capturing checker or interposing on check ray.
-    void remove_illegal_moves(int color, int first_move, int& msp, int in_check, int checker, int check_dir) {
-        if(in_check) {
+    void remove_illegal_moves(int color, int first_move, int& msp, CheckData& check_data) {
+        if(check_data.in_check) {
             int k = pos[color-WHITE];           // King position.
             for(int i=first_move; i<msp; i++) { // Go through all moves.
                 int j = stack[i]&0xFF;          // To position.
                 
-                if(delta_vec[j-k] != check_dir) {
+                if(delta_vec[j-k] != check_data.check_dir) {
                     stack[i--] = stack[--msp]; // Note, re-orders list. - we could compact in order instead.
                 } else {
                     // On check ray, could block or capture checker.
                     int x = k;
                     do{
-                        x += check_dir;
+                        x += check_data.check_dir;
                         if(x==j) break;
-                    } while(x != checker);
+                    } while(x != check_data.checker);
                     if(x!=j) {  stack[i--] = stack[--msp]; }
                 }
             }
@@ -580,7 +602,7 @@ clock_t ttt[30];
     }
 
     // Generate piece moves when not in contact check.
-    void gen_piece_moves(int color, int first_move, int& msp, int in_check, int checker, int check_dir) {
+    void gen_piece_moves(int color, int first_move, int& msp, CheckData& check_data) {
         // Pawns
         gen_pawn_moves(color);
         // Knights
@@ -589,7 +611,7 @@ clock_t ttt[30];
         gen_slider_moves(color);
         
         // Remove illegal moves (that don't solve distant check).
-        remove_illegal_moves(color, first_move, msp, in_check, checker, check_dir);
+        remove_illegal_moves(color, first_move, msp, check_data);
     }
 
     // All king moves.
@@ -622,35 +644,35 @@ clock_t ttt[30];
     // This seems to be a pseudo-move generator (but check).
     // It seems like we reject move-into-check (king capturable) when making the move.
     void gen_moves(int color, int lastply, int d) {
-        int in_check=0, checker= -1, check_dir = 20;
+        CheckData check_data;
         int pstack[12], ppos[12], psp=0, first_move=msp;
         int ep_flag = lastply>>24&0xFF;
 
         ep1 = ep2 = msp; Promo = 0;
 
         // Pinned-piece moves and non-constanct check detection.
-        gen_pincheck_moves(color, in_check, checker, check_dir, pstack, ppos, psp);
+        gen_pincheck_moves(color, check_data/*in_check, checker, check_dir*/, pstack, ppos, psp);
 
         // Detect contact checks.
-        get_contact_checks(color, lastply, in_check, checker, check_dir);
+        get_contact_checks(color, lastply, check_data/*in_check, checker, check_dir*/);
 
         // Remove moves with pinned pieces if in check.
-        if(in_check) {
+        if(check_data.in_check) {
             msp = first_move;
         }
         
         ep1 = msp; // Save start of en-passant/castling moves.
 
         // If we're not in double check, then generate moves for all pieces, otherwise only king moves are allowed
-        if(in_check <= 2) {
+        if(!check_data.in_double_check()) {
             // No castling out of check.
-            if(!in_check) {
+            if(!check_data.in_check) {
                 // Generate castlings.
                 gen_castling_moves(color);
             }
 
             // Generate en-passant captures (at most two).
-            if(!in_check || checker == ep_flag) {
+            if(!check_data.in_check || check_data.checker == ep_flag) {
                 gen_ep_moves(color, ep_flag);
             }
         
@@ -658,10 +680,10 @@ clock_t ttt[30];
 
             // On contact check only King retreat or capture helps.
             // Use a specialized recapture generator in that case.
-            if(in_check & 1) {
-                gen_piece_moves_in_contact_check(color, checker);
+            if(check_data.in_contact_check()) {
+                gen_piece_moves_in_contact_check(color, check_data.checker);
             } else {
-                gen_piece_moves(color, first_move, msp, in_check, checker, check_dir);
+                gen_piece_moves(color, first_move, msp, check_data);
             }
         }
         
@@ -712,10 +734,9 @@ clock_t ttt[30];
 
 void perft(int color, int lastply, int depth, int d)
 {   /* recursive perft, with in-lined make/unmake */
-    int i, j, /*k, m, x, y, v,*/ h, /*p,*/ oldpiece, store;
-    int first_move, piece, victim, /*pred, succ,*/ from, to, capt, mode;//,
-        //pcnr, vicnr, in_check=0, checker= -1, check_dir = 20, legal;
-    int SavRights = CasRights, /*lep1,*/ lep2, lkm, flag, Index;
+    int i, j, h, oldpiece, store;
+    int first_move, piece, victim, from, to, capt, mode;
+    int SavRights = CasRights, lep2, lkm, flag, Index;
     unsigned long long int ocnt=count, OldKey = HashKey, OldHKey = HighKey, SavCnt;
     union _bucket *Bucket;
 
@@ -723,7 +744,7 @@ void perft(int color, int lastply, int depth, int d)
     first_move = msp; /* new area on move stack */
     gen_moves(color, lastply, d); /* generate moves */
     nodecount++;
-    /*lep1 = ep1;*/ lep2 = ep2; lkm = Kmoves; flag = depth == 1 && !Promo;
+    lep2 = ep2; lkm = Kmoves; flag = 0;//flag = depth == 1 && !Promo;
 
     if(flag)
         count += Kmoves - first_move - ep2 + ep1; /* bulk count */
