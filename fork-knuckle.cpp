@@ -606,110 +606,106 @@ clock_t ttt[30];
         }
     }
 
-    void move_gen(int color, int lastply, int d) {
-        int i, j, k, p, v, x, z, y, m, h;
-        int mask, forward, rank, prank, ep_flag;
+    // This seems to be a pseudo-move generator (but check).
+    // It seems like we reject move-into-check (king capturable) when making the move.
+    void gen_moves(int color, int lastply, int d) {
         int in_check=0, checker= -1, check_dir = 20;
         int pstack[12], ppos[12], psp=0, first_move=msp;
-        
-        /* Some general preparation */
-        k = pos[color-WHITE];           /* position of my King */
-        forward = 48- color;            /* forward step */
-        rank = 0x58 - (forward>>1);     /* 4th/5th rank */
-        prank = 0xD0 - 5*(color>>1);    /* 2nd/7th rank */
-        ep_flag = lastply>>24&0xFF;
+        int ep_flag = lastply>>24&0xFF;
+
         ep1 = ep2 = msp; Promo = 0;
 
         // Pinned-piece moves and non-constanct check detection.
         gen_pincheck_moves(color, in_check, checker, check_dir, pstack, ppos, psp);
 
+        // Detect contact checks.
         get_contact_checks(color, lastply, in_check, checker, check_dir);
 
-        // Determine how to proceed based on check situation.
+        // Remove moves with pinned pieces if in check.
         if(in_check) {
-            // Remove moves with pinned pieces if in check.
             msp = first_move;
-
-            if(in_check > 2) goto King_Moves; // Double check
-            if(checker == ep_flag) { ep1 = msp; goto ep_Captures; }
-            goto Regular_Moves;
         }
         
         ep1 = msp; // Save start of en-passant/castling moves.
+
+        // If we're not in double check, then generate moves for all pieces, otherwise only king moves are allowed
+        if(in_check <= 2) {
+            // No castling out of check.
+            if(!in_check) {
+                // Generate castlings.
+                gen_castling_moves(color);
+            }
+
+            // Generate en-passant captures (at most two).
+            if(!in_check || checker == ep_flag) {
+                gen_ep_moves(color, ep_flag);
+            }
         
-        // Generate castlings.
-        gen_castling_moves(color);
+            ep2 = msp; // Save end of en-passant/castling moves.
 
-        // Generate en-passant captures (at most two).
-    ep_Captures:
-        gen_ep_moves(color, ep_flag);
-        
-        ep2 = msp; // Save end of en-passant/castling moves.
+            // On contact check only King retreat or capture helps.
+            // Use a specialized recapture generator in that case.
+            if(in_check & 1) {
+                gen_contact_check_moves(color, checker);
+            } else {
+                // Basic move generator for generating all moves.
 
-        // On contact check only King retreat or capture helps.
-        // Use a specialized recapture generator in that case.
-    Regular_Moves:
-      if(in_check & 1) {
-          gen_contact_check_moves(color, checker);
-      } else {
-          // Basic move generator for generating all moves.
+                // Pawns
+                gen_pawn_moves(color);
+                // Knights
+                gen_knight_moves(color);
+                // Sliders
+                gen_slider_moves(color);
 
-          // Pawns
-          gen_pawn_moves(color);
-          // Knights
-          gen_knight_moves(color);
-          // Sliders
-          gen_slider_moves(color);
-
-          // Remove illegal moves.
-          remove_illegal_moves(color, first_move, msp, in_check, checker, check_dir);
-      }
-
-      // King moves.
-    King_Moves:
-      Kmoves = msp; // Save first king move.
-
-      gen_king_moves(color);
-
-      // Put pieces that were parked onto pin stack back in lists.
-      restore_pinned_pieces(pstack, ppos, psp);
-    }
-
-int capturable(int color, int x)
-{   /* do full check for captures on square x by all opponen't pieces */
-    int i, /*j,*/ k, v, y, m, p;
-
-    /* check for pawns, through 2 squares on board */
-    v = color - 48; m = color | PAWNS;
-    if((board[x+v+RT]&m)==m) return 1; 
-    if((board[x+v+LT]&m)==m) return 2;
-
-    for(p=LastKnight[color]; p>=color-WHITE; p--)
-    {
-        k = pos[p];
-        if(k==0) continue;
-        m = code[p];
-        i = capt_code[k-x];
-        if(i&m) return p+256;
-    }
-
-    for(p=color-WHITE+FL; p>=FirstSlider[color]; p--)
-    {
-        k = pos[p];
-        if(k==0) continue;
-        m = code[p];
-        i = capt_code[k-x];
-        if(i&m)
-        {
-            v = delta_vec[k-x];
-            y = x;
-            while(board[y+=v]==DUMMY);
-            if(y==k) return p+512;
+                // Remove illegal moves.
+                remove_illegal_moves(color, first_move, msp, in_check, checker, check_dir);
+            }
         }
+        
+        Kmoves = msp; // Save first king move.
+
+        // King moves (always generated).
+        gen_king_moves(color);
+
+        // Put pieces that were parked onto pin stack back in lists.
+        restore_pinned_pieces(pstack, ppos, psp);
     }
 
-    return 0;
-}
+    // Full check for captures on square x by all opponent pieces.
+    int capturable(int color, int x) {
+        int i, k, v, y, m, p;
+
+        /* check for pawns, through 2 squares on board */
+        v = color - 48; m = color | PAWNS;
+        if((board[x+v+RT]&m)==m) return 1; 
+        if((board[x+v+LT]&m)==m) return 2;
+
+        for(p=LastKnight[color]; p>=color-WHITE; p--)
+        {
+            k = pos[p];
+            if(k==0) continue;
+            m = code[p];
+            i = capt_code[k-x];
+            if(i&m) return p+256;
+        }
+
+        for(p=color-WHITE+FL; p>=FirstSlider[color]; p--)
+        {
+            k = pos[p];
+            if(k==0) continue;
+            m = code[p];
+            i = capt_code[k-x];
+            if(i&m)
+            {
+                v = delta_vec[k-x];
+                y = x;
+                while(board[y+=v]==DUMMY);
+                if(y==k) return p+512;
+            }
+        }
+
+        return 0;
+    }
 
 void perft(int color, int lastply, int depth, int d)
 {   /* recursive perft, with in-lined make/unmake */
@@ -722,8 +718,7 @@ void perft(int color, int lastply, int depth, int d)
 
     TIME(17)
     first_move = msp; /* new area on move stack */
-    //legal = 0;
-    move_gen(color, lastply, d); /* generate moves */
+    gen_moves(color, lastply, d); /* generate moves */
     nodecount++;
     /*lep1 = ep1;*/ lep2 = ep2; lkm = Kmoves; flag = depth == 1 && !Promo;
 
