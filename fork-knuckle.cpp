@@ -736,7 +736,7 @@ void perft(int color, int lastply, int depth, int d)
 {   /* recursive perft, with in-lined make/unmake */
     int i, j, h, oldpiece, store;
     int first_move, piece, victim, from, to, capt, mode;
-    int SavRights = CasRights, lep2, lkm, flag, Index;
+    int SavRights = CasRights, lep2, lkm, Index;
     unsigned long long int ocnt=count, OldKey = HashKey, OldHKey = HighKey, SavCnt;
     union _bucket *Bucket;
 
@@ -744,15 +744,10 @@ void perft(int color, int lastply, int depth, int d)
     first_move = msp; /* new area on move stack */
     gen_moves(color, lastply, d); /* generate moves */
     nodecount++;
-    lep2 = ep2; lkm = Kmoves; flag = 0;//flag = depth == 1 && !Promo;
+    lep2 = ep2; lkm = Kmoves;
 
-    if(flag)
-        count += Kmoves - first_move - ep2 + ep1; /* bulk count */
-
-    for(i = flag ? ep1 : first_move; i<msp; i++)  /* go through all moves */
+    for(i = first_move; i<msp; i++)  /* go through all moves */
     {
-        if((i == lep2) & flag) { i = lkm; if(i >= msp) break; }
-
       /* fetch move from move stack */
         from = (stack[i]>>8)&0xFF;
         to = capt = stack[i]&0xFF;
@@ -800,10 +795,7 @@ path[d] = stack[i];
         victim = board[capt];
         CasRights |= cstl[piece-WHITE] | cstl[victim-WHITE];
 
-        if(depth==1)
-        {   if(piece != color && mode < 0xA0)
-            {   count++; goto quick; }
-        } else if(HashFlag)
+        if(depth != 1 && HashFlag)
         {
             SavCnt = count;
             HashKey ^= Zobrist(piece,from)  /* key update for normal move */
