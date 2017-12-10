@@ -837,6 +837,10 @@ minor:
         /* remove captured piece from piece list  */
         pos[victim-WHITE] = 0;
 
+        // Check for legal move. Seems we check for move-into-check for only king moves and castling???
+        // Makes sense, since we treat pinned pieces specially in gen_moves already - only way to move into check is by king move.
+        // Seems more efficient to check king for move-into-check by generating opposition attack board
+        //   once in gen_moves???
         if((piece != color && mode != 0xA0) ||
                  !capturable(color^COLOR, pos[color-WHITE]))
         {
