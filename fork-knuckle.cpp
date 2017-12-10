@@ -507,6 +507,96 @@ clock_t ttt[30];
         }
     }
 
+    // All knight moves.
+    int gen_knight_moves(int color) {
+        for(int p=LastKnight[color]; p>color-WHITE; p--) {
+            int x = pos[p]; if(x==0) continue;
+            int z = x<<8;
+
+            // Always 8 direction; unroll loop to avoid branches.
+            if(!(board[x+FLL]&color)) push_move(z,x+FLL);
+            if(!(board[x+FFL]&color)) push_move(z,x+FFL);
+            if(!(board[x+FFR]&color)) push_move(z,x+FFR);
+            if(!(board[x+FRR]&color)) push_move(z,x+FRR);
+            if(!(board[x+BRR]&color)) push_move(z,x+BRR);
+            if(!(board[x+BBR]&color)) push_move(z,x+BBR);
+            if(!(board[x+BBL]&color)) push_move(z,x+BBL);
+            if(!(board[x+BLL]&color)) push_move(z,x+BLL);
+        }
+    }
+
+    // All slider moves.
+    void gen_slider_moves(int color) {
+        for(int p=color-WHITE+FL; p>=FirstSlider[color]; p--)
+        {   
+            int x = pos[p]; if(x==0) continue;
+            int z = x<<8;
+
+            if((kind[p]-3)&2) {
+                // Scan 4 rook rays for R and Q.
+                int y = x, h;
+                do{ if(!((h=board[y+=RT])&color)) push_move(z,y); } while(!(h&COLOR));
+                y = x;
+                do{ if(!((h=board[y+=LT])&color)) push_move(z,y); } while(!(h&COLOR));
+                y = x;
+                do{ if(!((h=board[y+=FW])&color)) push_move(z,y); } while(!(h&COLOR));
+                y = x;
+                do{ if(!((h=board[y+=BW])&color)) push_move(z,y); } while(!(h&COLOR));
+            }
+            if((kind[p]-3)&1) {
+                // Scan 4 bishop rays for B and Q.
+                int y = x, h;
+                do{ if(!((h=board[y+=FL])&color)) push_move(z,y); } while(!(h&COLOR));
+                y = x;
+                do{ if(!((h=board[y+=BR])&color)) push_move(z,y); } while(!(h&COLOR));
+                y = x;
+                do{ if(!((h=board[y+=FR])&color)) push_move(z,y); } while(!(h&COLOR));
+                y = x;
+                do{ if(!((h=board[y+=BL])&color)) push_move(z,y); } while(!(h&COLOR));
+            }
+        }
+    }
+
+    // Remove moves that don't solve distant check by capturing checker or interposing on check ray.
+    void remove_illegal_moves(int color, int first_move, int& msp, int in_check, int checker, int check_dir) {
+        if(in_check) {
+            int k = pos[color-WHITE];           // King position.
+            for(int i=first_move; i<msp; i++) { // Go through all moves.
+                int j = stack[i]&0xFF;          // To position.
+                
+                if(delta_vec[j-k] != check_dir) {
+                    stack[i--] = stack[--msp]; // Note, re-orders list. - we could compact in order instead.
+                } else {
+                    // On check ray, could block or capture checker.
+                    int x = k;
+                    do{
+                        x += check_dir;
+                        if(x==j) break;
+                    } while(x != checker);
+                    if(x!=j) {  stack[i--] = stack[--msp]; }
+                }
+            }
+        }
+    }
+
+    // All king moves.
+    void gen_king_moves(int color) {
+        int x = pos[color-WHITE]; // King position
+        int z = x<<8;
+
+        // Always 8 direction, unroll loop to avoid branches.
+        if(!(board[x+RT]&color)) push_move(z,x+RT);
+        if(!(board[x+FR]&color)) push_move(z,x+FR);
+        if(!(board[x+FW]&color)) push_move(z,x+FW);
+        if(!(board[x+FL]&color)) push_move(z,x+FL);
+        if(!(board[x+LT]&color)) push_move(z,x+LT);
+        if(!(board[x+BL]&color)) push_move(z,x+BL);
+        if(!(board[x+BW]&color)) push_move(z,x+BW);
+        if(!(board[x+BR]&color)) push_move(z,x+BR);
+
+        // Mmm, why no check for move-into-check???
+    }
+
     void move_gen(int color, int lastply, int d) {
         int i, j, k, p, v, x, z, y, m, h;
         int mask, forward, rank, prank, ep_flag;
@@ -538,109 +628,39 @@ clock_t ttt[30];
         
         ep1 = msp; // Save start of en-passant/castling moves.
         
-        /* generate castlings */
+        // Generate castlings.
         gen_castling_moves(color);
 
-    /* generate e.p. captures (at most two)                  */
+        // Generate en-passant captures (at most two).
     ep_Captures:
         gen_ep_moves(color, ep_flag);
         
         ep2 = msp; // Save end of en-passant/castling moves.
 
-    /* On contact check only King retreat or capture helps   */
-    /* Use in that case specialized recapture generator      */
+        // On contact check only King retreat or capture helps.
+        // Use a specialized recapture generator in that case.
     Regular_Moves:
       if(in_check & 1) {
           gen_contact_check_moves(color, checker);
       } else {
-          /* Basic move generator for generating all moves */
+          // Basic move generator for generating all moves.
 
-          /* First do pawns, from pawn list hanging from list head    */
+          // Pawns
           gen_pawn_moves(color);
+          // Knights
+          gen_knight_moves(color);
+          // Sliders
+          gen_slider_moves(color);
 
-        /* Next do Knights */
-
-        for(p=LastKnight[color]; p>color-WHITE; p--)
-        {
-            x = pos[p]; z = x<<8;
-            if(x==0) continue;
-
-            /* always 8 direction, unroll loop to avoid branches */
-            if(!(board[x+FLL]&color)) push_move(z,x+FLL);
-            if(!(board[x+FFL]&color)) push_move(z,x+FFL);
-            if(!(board[x+FFR]&color)) push_move(z,x+FFR);
-            if(!(board[x+FRR]&color)) push_move(z,x+FRR);
-            if(!(board[x+BRR]&color)) push_move(z,x+BRR);
-            if(!(board[x+BBR]&color)) push_move(z,x+BBR);
-            if(!(board[x+BBL]&color)) push_move(z,x+BBL);
-            if(!(board[x+BLL]&color)) push_move(z,x+BLL);
-        }
-
-        /* now do sliding pieces */
-        /* for each ray, do ray scan, and goto next ray when blocked */
-
-        for(p=color-WHITE+FL; p>=FirstSlider[color]; p--)
-        {   
-          x = pos[p]; z = x<<8;
-          if(x==0) continue;
-
-          if((kind[p]-3)&2)
-          { /* scan 4 rook rays for R and Q */
-            y = x;
-            do{ if(!((h=board[y+=RT])&color)) push_move(z,y); } while(!(h&COLOR));
-            y = x;
-            do{ if(!((h=board[y+=LT])&color)) push_move(z,y); } while(!(h&COLOR));
-            y = x;
-            do{ if(!((h=board[y+=FW])&color)) push_move(z,y); } while(!(h&COLOR));
-            y = x;
-            do{ if(!((h=board[y+=BW])&color)) push_move(z,y); } while(!(h&COLOR));
-          }
-          if((kind[p]-3)&1)
-          { /* scan 4 bishop rays for B and Q */
-            y = x;
-            do{ if(!((h=board[y+=FL])&color)) push_move(z,y); } while(!(h&COLOR));
-            y = x;
-            do{ if(!((h=board[y+=BR])&color)) push_move(z,y); } while(!(h&COLOR));
-            y = x;
-            do{ if(!((h=board[y+=FR])&color)) push_move(z,y); } while(!(h&COLOR));
-            y = x;
-            do{ if(!((h=board[y+=BL])&color)) push_move(z,y); } while(!(h&COLOR));
-          }
-        }
-
-    /* remove moves that don't solve distant check by          */
-    /* capturing checker or interposing on check ray           */
-        if(in_check)
-        for(i=first_move; i<msp; i++)  /* go through all moves */
-        {
-            if(delta_vec[(j=stack[i]&0xFF)-k] != check_dir)
-                stack[i--] = stack[--msp];
-            else
-            {   /* on check ray, could block or capture checker*/
-                x = k;
-                do{
-                    x += check_dir;
-                    if(x==j) break;
-                } while(x != checker);
-               if(x!=j) {  stack[i--] = stack[--msp]; }
-            }
-        }
+          // Remove illegal moves.
+          remove_illegal_moves(color, first_move, msp, in_check, checker, check_dir);
       }
 
-    /* Generate moves with the always present King */
+      // King moves.
     King_Moves:
-        x = pos[color-WHITE]; z = x<<8;
-        Kmoves = msp;
+      Kmoves = msp; // Save first king move.
 
-        /* always 8 direction, unroll loop to avoid branches */
-        if(!(board[x+RT]&color)) push_move(z,x+RT);
-        if(!(board[x+FR]&color)) push_move(z,x+FR);
-        if(!(board[x+FW]&color)) push_move(z,x+FW);
-        if(!(board[x+FL]&color)) push_move(z,x+FL);
-        if(!(board[x+LT]&color)) push_move(z,x+LT);
-        if(!(board[x+BL]&color)) push_move(z,x+BL);
-        if(!(board[x+BW]&color)) push_move(z,x+BW);
-        if(!(board[x+BR]&color)) push_move(z,x+BR);
+      gen_king_moves(color);
 
     /* Put pieces that were parked onto pin stack back in lists */
        while(psp>0)
