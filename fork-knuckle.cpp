@@ -427,8 +427,10 @@ clock_t ttt[30];
         int k = pos[color-WHITE];           // King position
         int y = lastply&0xFF;
 
+        //printf("                                                     - king is at %2x, lastmove at %2x, capcode %2x, code %2x C_C %2x\n", k, y, capt_code[k-y], code[board[y]-WHITE], C_CONTACT);
         if(capt_code[k-y] & code[board[y]-WHITE] & C_CONTACT) {
             check_data.add_contact_check(y, delta_vec[y-k]);
+            //printf("                                       contact check - king is at %2x, lastmove at %2x\n", k, y);
         }
     }
 
@@ -647,17 +649,19 @@ clock_t ttt[30];
         CheckData check_data;
         int pstack[12], ppos[12], psp=0, first_move=msp;
         int ep_flag = lastply>>24&0xFF;
-
+        //printf("                             check_data.in_check is %d\n", check_data.in_check);
         ep1 = ep2 = msp; Promo = 0;
 
         // Pinned-piece moves and non-constanct check detection.
         gen_pincheck_moves(color, check_data/*in_check, checker, check_dir*/, pstack, ppos, psp);
+        //printf("                             check_data.in_check is %d\n", check_data.in_check);
 
         // Detect contact checks.
         get_contact_checks(color, lastply, check_data/*in_check, checker, check_dir*/);
+        //printf("                             check_data.in_check is %d\n", check_data.in_check);
 
         // Remove moves with pinned pieces if in check.
-        if(check_data.in_check) {
+        if(check_data.in_check) { //printf("                              in check!!!!!!\n");
             msp = first_move;
         }
         
@@ -694,6 +698,8 @@ clock_t ttt[30];
 
         // Put pieces that were parked onto pin stack back in lists.
         restore_pinned_pieces(pstack, ppos, psp);
+
+        //printf("                        gen_moves - #moves %d\n", (msp-first_move));
     }
 
     // Full check for captures on square x by all opponent pieces.
@@ -745,6 +751,8 @@ void perft(int color, int lastply, int depth, int d)
     gen_moves(color, lastply, d); /* generate moves */
     nodecount++;
     lep2 = ep2; lkm = Kmoves;
+
+    //printf("Depth %d (d = %d) #moves = %d\n", depth, d, (msp-first_move));
 
     for(i = first_move; i<msp; i++)  /* go through all moves */
     {
@@ -864,6 +872,7 @@ minor:
             if(depth == 1 ) {
                 nodecount++;
                 count++;
+                //if(count < 280) pboard(board, 12, 0);
             }
             else {
                 perft(COLOR-color, stack[i], depth-1, d+1);
@@ -989,6 +998,7 @@ void doit(int Dep, int Col, int split) {
         perft(Col, lastPly, i, 1);
         t = clock()-t;
         printf("perft(%2d)= %12lld (%6.3f sec)\n", i, count, t*(1./CLOCKS_PER_SEC));
+        fflush(stdout);
     }
     fclose(f);
 }
@@ -1009,6 +1019,9 @@ void setup_hash(int size) {
  * @return color
  */
 int setup_board(const char* FEN) {
+    memset(pc, 0, sizeof(pc));
+    memset(brd, 0, sizeof(brd));
+
     noUnder = 0; // for strict perft adherence
     
     delta_init();
