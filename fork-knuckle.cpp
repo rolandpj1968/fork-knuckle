@@ -353,13 +353,39 @@ clock_t ttt[30];
     // Position of the King.
     int king_pos(int color) { return pos[king_index(color)]; }
 
+    // @return true iff the target square is open or opposition (to take)
+    bool can_move_to(int color, int to) {
+        return !(board[to]&color);
+    }
+
+    // @return true iff the given square is occupied by a piece of either color - guards are considered occupied
+    bool is_occupied(int pos) {
+        return board[pos]&COLOR;
+    }
+
+    // Generate one move if to square is available (empty or opponent).
+    // @return occupant of target square (for slider loops)
+    void gen_move_to(int color, int from_pos, int to) {
+        if(can_move_to(color, to)) {
+            push_move_old((from_pos << 8), to);
+        }
+    }
+
+    // Generate one move if to square is available (empty or opponent).
+    void gen_move(int color, int from_pos, int dir) {
+        gen_move_to(color, from_pos, from_pos + dir);
+    }
+
+    // Forward direction for the color - this is just a trick to get FW/BW, i.e. +/- 0x10.
+    int forward_dir(int color) { return 0x30 - color; }
+
     // All pinned pieces are removed from lists.
     // All their remaining legal moves are generated.
     // All distant checks are detected.
     void gen_pincheck_moves(int color, CheckData& check_data, int pstack[], int ppos[], int& psp) {
         /* Some general preparation */
-        int k = king_pos(color);           /* position of my King */
-        int forward = 48- color;            /* forward step */
+        int k = king_pos(color);            /* position of my King */
+        int forward = forward_dir(color);   /* forward step */
         int rank = 0x58 - (forward>>1);     /* 4th/5th rank */
         int prank = 0xD0 - 5*(color>>1);    /* 2nd/7th rank */
 
@@ -438,11 +464,11 @@ clock_t ttt[30];
 
     // Determine if there is a contact check (there can only be one).
     void get_contact_check(int color, int last_move, CheckData& check_data) {
-        int k = king_pos(color);           // King position
+        int king_pos = this->king_pos(color);
         int y = last_move&0xFF;
 
-        if(capt_code[k-y] & code[board[y]-WHITE] & C_CONTACT) {
-            check_data.add_contact_check(y, delta_vec[y-k]);
+        if(capt_code[king_pos-y] & code[board[y]-WHITE] & C_CONTACT) {
+            check_data.add_contact_check(y, delta_vec[y-king_pos]);
         }
     }
 
@@ -474,7 +500,7 @@ clock_t ttt[30];
     // On contact check only King retreat or capture helps.
     // Use in that case specialized recapture generator.
     void gen_piece_moves_in_contact_check(int color, int checker) {
-        int forward = 48- color;            // forward step
+        int forward = forward_dir(color);            // forward step
         int prank = 0xD0 - 5*(color>>1);    // 2nd/7th rank
 
         // check for pawns, through 2 squares on board.
@@ -515,7 +541,7 @@ clock_t ttt[30];
 
     // All pawn moves.
     void gen_pawn_moves(int color) {
-        int forward = 48- color;            // forward step
+        int forward = forward_dir(color);            // forward step
         int rank = 0x58 - (forward>>1);     // 4th/5th rank
         int prank = 0xD0 - 5*(color>>1);    // 2nd/7th rank
         int mask = color|0x80;              // own color, empty square, or guard
@@ -541,30 +567,6 @@ clock_t ttt[30];
                     push_move_old(z,y|y<<MODE_SHIFT);        /* e.p. flag */
             }
         }
-    }
-
-    // @return true iff the target square is open or opposition (to take)
-    bool can_move_to(int color, int to) {
-        return !(board[to]&color);
-    }
-
-    // @return true iff the given square is occupied by a piece of either color - guards are considered occupied
-    bool is_occupied(int pos) {
-        return board[pos]&COLOR;
-    }
-
-    // Generate one move if to square is available (empty or opponent).
-    // @return occupant of target square (for slider loops)
-    void gen_move_to(int color, int from, int to) {
-        if(can_move_to(color, to)) {
-            push_move_old((from << 8), to);
-        }
-    }
-
-        // Generate one move if to square is available (empty or opponent).
-    // @return occupant of target square (for slider loops)
-    void gen_move(int color, int from, int dir) {
-        gen_move_to(color, from, from + dir);
     }
 
     // All knight moves.
@@ -603,7 +605,7 @@ clock_t ttt[30];
     }
 
     // Remove moves that don't solve distant check by capturing checker or interposing on check ray.
-    void remove_illegal_moves(int color, int first_move, int& msp, CheckData& check_data) {
+    void remove_illegal_moves(int color, int first_move, CheckData& check_data) {
         if(check_data.in_check) {
             int k = king_pos(color);           // King position.
             for(int i=first_move; i<msp; i++) { // Go through all moves.
@@ -625,7 +627,7 @@ clock_t ttt[30];
     }
 
     // Generate piece moves when not in contact check.
-    void gen_piece_moves(int color, int first_move, int& msp, CheckData& check_data) {
+    void gen_piece_moves(int color, int first_move, CheckData& check_data) {
         // Pawns
         gen_pawn_moves(color);
         // Knights
@@ -634,10 +636,10 @@ clock_t ttt[30];
         gen_slider_moves(color);
         
         // Remove illegal moves (that don't solve distant check).
-        remove_illegal_moves(color, first_move, msp, check_data);
+        remove_illegal_moves(color, first_move, check_data);
     }
 
-    // All king moves.
+    // All king moves - note these are pseudo-moves. Not sure why we don't check for capturable here?
     void gen_king_moves(int color) {
         int x = king_pos(color); // King position
         int z = x<<8;
@@ -706,7 +708,7 @@ clock_t ttt[30];
             if(check_data.in_contact_check()) {
                 gen_piece_moves_in_contact_check(color, check_data.checker);
             } else {
-                gen_piece_moves(color, first_move, msp, check_data);
+                gen_piece_moves(color, first_move, check_data);
             }
         }
         
