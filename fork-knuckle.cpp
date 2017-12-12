@@ -52,10 +52,7 @@ unsigned char
         pc[NPCE*4+1], /* piece list, equivalenced with various piece info  */
         brd[0xBC+2*0xEF+1],      /* contains play board and 2 delta boards  */
         CasRights,               /* one bit per castling, clear if allowed */
-        HashFlag,
-
-        /* piece-number assignment of first row, and piece types */
-        capts[8]  = {0, C_PPAWN, C_MPAWN, C_KNIGHT, C_BISHOP, C_ROOK, C_QUEEN, C_KING};
+    HashFlag;
 
 /* overlays that interleave other piece info in pos[] */
     unsigned char *const kind = (pc+1);        // Map from piece index to piece type - pawn, rook, king, etc.
@@ -64,7 +61,7 @@ unsigned char *const cstl = (pc+1+NPCE);
     unsigned char *const code = (pc+1+NPCE*3);
 
 /* Piece counts hidden in the unused Pawn section, indexed by color */
-unsigned char *const LastKnight  = (code-4);
+unsigned char *const LastKnightIndex  = (code-4);
 unsigned char *const FirstSlider = (code-3);
 unsigned char *const FirstPawn   = (code-2);
 
@@ -137,9 +134,9 @@ clock_t ttt[30];
         }
 
         // Capture codes
-        for(int i=0; i<NPCE; i++) { code[i] = capts[kind[i]]; }
+        for(int piece_index = 0; piece_index < NPCE; piece_index++) { code[piece_index] = CAPTS[kind[piece_index]]; }
 
-        // Castling spoilers (King and both original Rooks)
+        // Castling spoilers (King and both original Rooks) - not sure what the shifts are for???
         cstl[KING_INDEX] = WHITE;
         cstl[Q_ROOK_INDEX]         = WHITE>>2;
         cstl[K_ROOK_INDEX]         = WHITE>>4;
@@ -149,10 +146,10 @@ clock_t ttt[30];
 
         // Piece indexes (can change when we compactify lists, or promote).
         // Doesn't look like any compaction is done at present.
-        LastKnight[WHITE]  = K_KNIGHT_INDEX;
+        LastKnightIndex[WHITE]  = K_KNIGHT_INDEX;
         FirstSlider[WHITE] = QUEEN_INDEX;
         FirstPawn[WHITE]   = PAWNS_INDEX;
-        LastKnight[BLACK]  = K_KNIGHT_INDEX + WHITE;
+        LastKnightIndex[BLACK]  = K_KNIGHT_INDEX + WHITE;
         FirstSlider[BLACK] = QUEEN_INDEX + WHITE;
         FirstPawn[BLACK]   = PAWNS_INDEX + WHITE;
 
@@ -189,13 +186,13 @@ clock_t ttt[30];
     int checker(int color) {
         for(int i=0; i<8; i++) {
             int v = KING_ROSE[i];
-            int x = pos[color-WHITE] + v;
+            int x = pos[king_index(color)] + v;
             int piece = board[x];
             if((piece & COLOR) == (color^COLOR)) {
                 if(code[piece-WHITE] & capt_code[-v]) return x;
             }
             v = KNIGHT_ROSE[i];
-            x = pos[color-WHITE] + v;
+            x = pos[king_index(color)] + v;
             piece = board[x];
             if((piece & COLOR) == (color^COLOR)) {
                 if(code[piece-WHITE] & capt_code[-v]) return x;
@@ -211,8 +208,8 @@ clock_t ttt[30];
         for(int i=0; i<NPCE; i++) pos[i] = cstl[i] = 0;
         FirstSlider[WHITE] = 0x10;
         FirstSlider[BLACK] = 0x30;
-        LastKnight[WHITE]  = 0x00;
-        LastKnight[BLACK]  = 0x20;
+        LastKnightIndex[WHITE]  = 0x00;
+        LastKnightIndex[BLACK]  = 0x20;
         FirstPawn[WHITE]   = 0x18;
         FirstPawn[BLACK]   = 0x38;
         CasRights = 0;
@@ -247,7 +244,7 @@ clock_t ttt[30];
                         }
                     case 'Q': Piece += 2;
                     case 'B': 
-                        if(--FirstSlider[col] <= LastKnight[col]) return(-2);
+                        if(--FirstSlider[col] <= LastKnightIndex[col]) return(-2);
                         nr = FirstSlider[col];
                         break;
                     case 'P': 
@@ -256,8 +253,8 @@ clock_t ttt[30];
                         Piece = col>>5;
                         break;
                     case 'N': 
-                        if(FirstSlider[col] <= ++LastKnight[col]) return(-3);
-                        nr = LastKnight[col];
+                        if(FirstSlider[col] <= ++LastKnightIndex[col]) return(-3);
+                        nr = LastKnightIndex[col];
                         Piece = KNIGHT_KIND;
                         break;
                     default:
@@ -265,7 +262,7 @@ clock_t ttt[30];
                     }
                     pos[nr] = ((file +  16*row) & 0x77) + 0x22;
                     kind[nr] = Piece;
-                    code[nr] = capts[Piece];
+                    code[nr] = CAPTS[Piece];
                     Zob[nr]  = Keys + 128*Piece + (col&BLACK)/8 - 0x22;
                     cstl[nr] = cc;
                     CasRights |= cc;       /* remember K & R on original location */
@@ -343,11 +340,18 @@ clock_t ttt[30];
 
     // Contruct a move in integer representation with 'to' in the low byte, 'from' in the second lowest byte and mode/flags in the high byte
     int mk_move(int from_pos, int to_pos, int mode) { return (mode << MODE_SHIFT) | (from_pos << FROM_SHIFT) | to_pos; }
+
+    // Base index for the color.
+    int base_index(int color) { return color-WHITE; }
+    
+    // Piece index of the King.
+    int king_index(int color) { return base_index(color) + KING_INDEX; }
+
+    // Piece index of the last slider - we typically iterate through them backwards.
+    int last_slider_index(int color) { return base_index(color) + LAST_SLIDER_INDEX; }
     
     // Position of the King.
-    int king_pos(int color) {
-        return pos[color-WHITE];
-    }
+    int king_pos(int color) { return pos[king_index(color)]; }
 
     // All pinned pieces are removed from lists.
     // All their remaining legal moves are generated.
@@ -483,7 +487,7 @@ clock_t ttt[30];
         if((board[y+LT]&m)==m && pos[board[y+LT]-WHITE]) push_move_old((y+LT)<<8,z);
 
         // Knights
-        for(int p=LastKnight[color]; p>color-WHITE; p--)
+        for(int p = LastKnightIndex[color]; p > king_index(color); p--)
         {
             int k = pos[p];
             if(k==0) continue;
@@ -539,52 +543,61 @@ clock_t ttt[30];
         }
     }
 
-    // All knight moves.
-    int gen_knight_moves(int color) {
-        for(int p=LastKnight[color]; p>color-WHITE; p--) {
-            int x = pos[p]; if(x==0) continue;
-            int z = x<<8;
+    // @return true iff the target square is open or opposition (to take)
+    bool can_move_to(int color, int to) {
+        return !(board[to]&color);
+    }
 
-            // Always 8 direction; unroll loop to avoid branches.
-            if(!(board[x+FLL]&color)) push_move_old(z,x+FLL);
-            if(!(board[x+FFL]&color)) push_move_old(z,x+FFL);
-            if(!(board[x+FFR]&color)) push_move_old(z,x+FFR);
-            if(!(board[x+FRR]&color)) push_move_old(z,x+FRR);
-            if(!(board[x+BRR]&color)) push_move_old(z,x+BRR);
-            if(!(board[x+BBR]&color)) push_move_old(z,x+BBR);
-            if(!(board[x+BBL]&color)) push_move_old(z,x+BBL);
-            if(!(board[x+BLL]&color)) push_move_old(z,x+BLL);
+    // @return true iff the given square is occupied by a piece of either color - guards are considered occupied
+    bool is_occupied(int pos) {
+        return board[pos]&COLOR;
+    }
+
+    // Generate one move if to square is available (empty or opponent).
+    // @return occupant of target square (for slider loops)
+    void gen_move_to(int color, int from, int to) {
+        if(can_move_to(color, to)) {
+            push_move_old((from << 8), to);
+        }
+    }
+
+        // Generate one move if to square is available (empty or opponent).
+    // @return occupant of target square (for slider loops)
+    void gen_move(int color, int from, int dir) {
+        gen_move_to(color, from, from + dir);
+    }
+
+    // All knight moves.
+    void gen_knight_moves(int color) {
+        for(int knight_index = LastKnightIndex[color]; knight_index > king_index(color); knight_index--) {
+            int knight_pos = pos[knight_index]; if(knight_pos == 0) continue;
+            auto M = [=](int dir) { gen_move(color, knight_pos, dir); };
+            // All 8 knight directions.
+            M(FRR); M(FFR); M(FFL); M(FLL); M(BLL); M(BBL); M(BBR); M(BRR);
         }
     }
 
     // All slider moves.
     void gen_slider_moves(int color) {
-        for(int p=color-WHITE+FL; p>=FirstSlider[color]; p--)
+        for(int slider_index = last_slider_index(color); slider_index>=FirstSlider[color]; slider_index--)
         {   
-            int x = pos[p]; if(x==0) continue;
-            int z = x<<8;
+            int slider_pos = pos[slider_index]; if(slider_pos==0) continue;
+            int z = slider_pos<<8;
 
-            if((kind[p]-3)&2) {
-                // Scan 4 rook rays for R and Q.
-                int y = x, h;
-                do{ if(!((h=board[y+=RT])&color)) push_move_old(z,y); } while(!(h&COLOR));
-                y = x;
-                do{ if(!((h=board[y+=LT])&color)) push_move_old(z,y); } while(!(h&COLOR));
-                y = x;
-                do{ if(!((h=board[y+=FW])&color)) push_move_old(z,y); } while(!(h&COLOR));
-                y = x;
-                do{ if(!((h=board[y+=BW])&color)) push_move_old(z,y); } while(!(h&COLOR));
+            auto MM = [=](int dir) {
+                int to = slider_pos;
+                do{
+                    to += dir; gen_move_to(color, slider_pos, to);
+                } while(!is_occupied(to));
+            };
+
+            if((kind[slider_index]-3)&2) {
+                // All 4 rook rays for R and Q.
+                MM(RT); MM(LT); MM(FW); MM(BW);
             }
-            if((kind[p]-3)&1) {
-                // Scan 4 bishop rays for B and Q.
-                int y = x, h;
-                do{ if(!((h=board[y+=FL])&color)) push_move_old(z,y); } while(!(h&COLOR));
-                y = x;
-                do{ if(!((h=board[y+=BR])&color)) push_move_old(z,y); } while(!(h&COLOR));
-                y = x;
-                do{ if(!((h=board[y+=FR])&color)) push_move_old(z,y); } while(!(h&COLOR));
-                y = x;
-                do{ if(!((h=board[y+=BL])&color)) push_move_old(z,y); } while(!(h&COLOR));
+            if((kind[slider_index]-3)&1) {
+                // All 4 bishop rays for B and Q.
+                MM(FL); MM(BR); MM(FR); MM(BL);
             }
         }
     }
@@ -715,7 +728,7 @@ clock_t ttt[30];
         if((board[x+v+RT]&m)==m) return 1; 
         if((board[x+v+LT]&m)==m) return 2;
 
-        for(p=LastKnight[color]; p>=color-WHITE; p--)
+        for(p=LastKnightIndex[color]; p>=king_index(color); p--)
         {
             k = pos[p];
             if(k==0) continue;
@@ -922,20 +935,20 @@ quick:
                     if(kind[piece-WHITE] == KNIGHT_KIND)
                     {   /* Knight must be put in Knight list */
                         FirstSlider[color]++;
-                        piece = ++LastKnight[color]+WHITE;
+                        piece = ++LastKnightIndex[color]+WHITE;
                         pos[piece-WHITE]  = from;
                         kind[piece-WHITE] = KNIGHT_KIND;
                         Zob[piece-WHITE]  = Keys + 128*KNIGHT_KIND
                                                  + (color&BLACK)/8 - 0x22;
                     } else Zob[piece-WHITE] -= 128;
-                    code[piece-WHITE] = capts[kind[piece-WHITE]];
+                    code[piece-WHITE] = CAPTS[kind[piece-WHITE]];
                     HashKey ^= Zobrist(piece, to);
                     HighKey ^= Zobrist(piece, to+8);
                     goto minor; /* try minor promotion */
                 } else
                 {   /* All promotions tried, demote to Pawn again */
                     kind[piece-WHITE] = QUEEN_KIND; /* put Q back for hash store */
-                    piece = oldpiece; LastKnight[color]--;
+                    piece = oldpiece; LastKnightIndex[color]--;
                     pos[piece-WHITE] = from;
                     board[from] = piece;
                 }

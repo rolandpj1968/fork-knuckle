@@ -21,6 +21,11 @@ static const int C_QUEEN =   (C_BISHOP|C_ROOK);
 static const int C_CONTACT = (C_KING|C_KNIGHT);
 static const int C_DISTANT = (C_ORTH|C_DIAG);
 
+// Capture codes, indexed by piece kind.
+static const int CAPTS[8]  = {0, C_PPAWN, C_MPAWN, C_KNIGHT, C_BISHOP, C_ROOK, C_QUEEN, C_KING};
+
+
+
 // Board codes (32 per side: each 16 Pieces, 16 Pawns)
 static const int WHITE =  0x20;
 static const int BLACK =  0x40;
@@ -43,12 +48,13 @@ static const int W_PAWN_KIND = 2; // Moves forwards
 static const int B_PAWN_KIND = 1; // Moves backwards
 
 // Piece indexes in kind[], pos[] etc. tables (at start).
-// Layout is:
+// For each of Black then White, layout is:
 //    0    -> King
 //    1-2  -> Knights
 //    3-10 -> space for promotions, upwards from 3 for Knight promo's, downwards from 10 for slider promo's
 //   11-15 -> sliders (Queen, Rook, Rook, Bishop, Bishop)
 //   16-23 -> Pawns
+//   24-31 -> (unused)
 static const int Q_ROOK_INDEX   = 12;
 static const int Q_KNIGHT_INDEX =  1;
 static const int Q_BISHOP_INDEX = 14;
@@ -57,6 +63,9 @@ static const int KING_INDEX     =  0;
 static const int K_BISHOP_INDEX = 15;
 static const int K_KNIGHT_INDEX =  2;
 static const int K_ROOK_INDEX   = 13;
+
+// Happens to be the king's bishop
+static const int LAST_SLIDER_INDEX   = 15;
 
 // Back row piece layout (at start).
 static const int BACK_ROW_KINDS[8]   = { ROOK_KIND,    KNIGHT_KIND,    BISHOP_KIND,    QUEEN_KIND,  KING_KIND,  BISHOP_KIND,    KNIGHT_KIND,    ROOK_KIND };
