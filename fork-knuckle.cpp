@@ -58,10 +58,10 @@ unsigned char
         capts[8]  = {0, C_PPAWN, C_MPAWN, C_KNIGHT, C_BISHOP, C_ROOK, C_QUEEN, C_KING};
 
 /* overlays that interleave other piece info in pos[] */
-unsigned char *const kind = (pc+1);
+    unsigned char *const kind = (pc+1);        // Map from piece index to piece type - pawn, rook, king, etc.
 unsigned char *const cstl = (pc+1+NPCE);
-unsigned char *const pos  = (pc+1+NPCE*2);
-unsigned char *const code = (pc+1+NPCE*3);
+    unsigned char *const pos  = (pc+1+NPCE*2); // Map from piece index to board position in 0x88 format.
+    unsigned char *const code = (pc+1+NPCE*3);
 
 /* Piece counts hidden in the unused Pawn section, indexed by color */
 unsigned char *const LastKnight  = (code-4);
@@ -74,16 +74,15 @@ unsigned char *const board      = (brd+1);                /* 12 x 16 board: dbl 
 unsigned char *const capt_code  = (brd+1+0xBC+0x77);      /* piece type that can reach this*/
 char          *const delta_vec  = ((char *) brd+1+0xBC+0xEF+0x77); /* step to bridge certain vector */
 
-char noUnder = 0;
+    char noUnder = 0; // Fobid under-promotions?
 
 char Keys[1040];
 int path[100];
-int stack[1024], msp = 0, ep1, ep2, Kmoves, Promo, Split, epSqr, HashSize, HashSection;
+    uint32_t stack[1024];
+    int msp = 0, ep1, ep2, Kmoves, Promo, Split, epSqr, HashSize, HashSection;
 uint64_t HashKey=8729767686LL, HighKey=1234567890LL, count, epcnt, xcnt, ckcnt, cascnt, promcnt, nodecount;
 FILE *f;
 clock_t ttt[30];
-
-    void push_move_old(int from, int to) { stack[msp++] = from + to; }
 
     /**
      * Make an empty board surrounded by guard band of uncapturable pieces.
@@ -127,19 +126,18 @@ clock_t ttt[30];
     void piece_init(void) {
         /* piece-number assignment of first row, and piece types */
         static const unsigned char array[8]    = {   12,      1,     14,    11,    0,     15,      2,   13 }; // ??? What are these - offsets in kind, pos???
-        static const unsigned char BACK_ROW[8] = { ROOK, KNIGHT, BISHOP, QUEEN, KING, BISHOP, KNIGHT, ROOK };
 
         /* initalize piece type and position, in initial setup */
         for(int i=0; i<8; i++) {
-            kind[array[i]+WHITE] = BACK_ROW[i];
-            kind[array[i]]       = BACK_ROW[i];
-            kind[i+PAWNS]        = 1;
-            kind[i+PAWNS+WHITE]  = 2;
+            kind[array[i]+WHITE] = BACK_ROW_KINDS[i];
+            kind[array[i]]       = BACK_ROW_KINDS[i];
+            kind[i+PAWNS_INDEX]        = 1;
+            kind[i+PAWNS_INDEX+WHITE]  = 2;
 
             pos[array[i]]        = i+0x22;
             pos[array[i]+WHITE]  = i+0x92;
-            pos[i+PAWNS]         = i+0x32;
-            pos[i+PAWNS+WHITE]   = i+0x82;
+            pos[i+PAWNS_INDEX]         = i+0x32;
+            pos[i+PAWNS_INDEX+WHITE]   = i+0x82;
         }
 
         /* set capture codes for each piece */
@@ -191,18 +189,18 @@ clock_t ttt[30];
         printf("\n");
     }
 
-    int checker(int col) {
+    int checker(int color) {
         for(int i=0; i<8; i++) {
             int v = KING_ROSE[i];
-            int x = pos[col-WHITE] + v;
+            int x = pos[color-WHITE] + v;
             int piece = board[x];
-            if((piece & COLOR) == (col^COLOR)) {
+            if((piece & COLOR) == (color^COLOR)) {
                 if(code[piece-WHITE] & capt_code[-v]) return x;
             }
             v = KNIGHT_ROSE[i];
-            x = pos[col-WHITE] + v;
+            x = pos[color-WHITE] + v;
             piece = board[x];
-            if((piece & COLOR) == (col^COLOR)) {
+            if((piece & COLOR) == (color^COLOR)) {
                 if(code[piece-WHITE] & capt_code[-v]) return x;
             }
         }
@@ -235,11 +233,11 @@ clock_t ttt[30];
                 else {
                     col = WHITE;
                     if(c >= 'a') { c += 'A'-'a'; col = BLACK; }
-                    int Piece = BISHOP, cc = 0, nr;
+                    int Piece = BISHOP_KIND, cc = 0, nr;
                     switch(c) {
                     case 'K':
                         if(pos[col-WHITE] > 0) return -1;   /* two kings illegal */
-                        Piece = KING;
+                        Piece = KING_KIND;
                         nr = col-WHITE;
                         if(0x20*row == 7*(col-WHITE) && file == 4) cc = (col|col>>2|col>>4);
                         
@@ -263,7 +261,7 @@ clock_t ttt[30];
                     case 'N': 
                         if(FirstSlider[col] <= ++LastKnight[col]) return(-3);
                         nr = LastKnight[col];
-                        Piece = KNIGHT;
+                        Piece = KNIGHT_KIND;
                         break;
                     default:
                         return -15;
@@ -340,6 +338,15 @@ clock_t ttt[30];
         }
     };
 
+    // Push a mvoe to the move stack - from already shifted and with sundry extra flags anywhere (Eeek!)
+    void push_move_old(int from, int to) { stack[msp++] = from | to; }
+
+    // Contruct a move in integer representation with 'to' in the low byte and 'from' in the second lowest byte
+    int mk_move(int from_pos, int to_pos) { return (from_pos << 8) | to_pos; }
+
+    // Contruct a move in integer representation with 'to' in the low byte, 'from' in the second lowest byte and mode/flags in the high byte
+    int mk_move(int from_pos, int to_pos, int mode) { return (mode << MODE_SHIFT) | (from_pos << FROM_SHIFT) | to_pos; }
+    
     // Position of the King.
     int king_pos(int color) {
         return pos[color-WHITE];
@@ -429,9 +436,9 @@ clock_t ttt[30];
     }
 
     // Determine if there is a contact check (there can only be one).
-    void get_contact_check(int color, int lastply, CheckData& check_data) {
+    void get_contact_check(int color, int last_move, CheckData& check_data) {
         int k = king_pos(color);           // King position
-        int y = lastply&0xFF;
+        int y = last_move&0xFF;
 
         if(capt_code[k-y] & code[board[y]-WHITE] & C_CONTACT) {
             check_data.add_contact_check(y, delta_vec[y-k]);
@@ -454,7 +461,7 @@ clock_t ttt[30];
 
     // Generate en-passant captures (at most two)
     void gen_ep_moves(int color, int ep_flag) {
-        int mask = color | PAWNS;
+        int mask = color | PAWNS_INDEX; // Is this index?
 
         int x = ep_flag+1;
         if((board[x]&mask)==mask) push_move_old(x<<8,(ep_flag^0x10)|EP_SHIFTED);
@@ -470,7 +477,7 @@ clock_t ttt[30];
         int prank = 0xD0 - 5*(color>>1);    // 2nd/7th rank
 
         // check for pawns, through 2 squares on board.
-        int m = color | PAWNS;
+        int m = color | PAWNS_INDEX; // is this index?
         int z; int x; z = x = checker;
         int y = x - forward;
         
@@ -512,7 +519,7 @@ clock_t ttt[30];
         int prank = 0xD0 - 5*(color>>1);    // 2nd/7th rank
         int mask = color|0x80;              // own color, empty square, or guard
 
-        for(int p=FirstPawn[color]; p<color-WHITE+PAWNS+8; p++)
+        for(int p=FirstPawn[color]; p<color-WHITE+PAWNS_INDEX+8; p++)
         {
             int x = pos[p]; if(x==0) continue;
             int z = x<<8;
@@ -649,10 +656,10 @@ clock_t ttt[30];
 
     // This seems to be a pseudo-move generator (but check).
     // It seems like we reject move-into-check (king capturable) when making the move.
-    void gen_moves(int color, int lastply, int d) {
+    void gen_moves(int color, int last_move, int d) {
         CheckData check_data;
         int pstack[12], ppos[12], psp=0, first_move=msp;
-        int ep_flag = lastply>>MODE_SHIFT&0xFF;
+        int ep_flag = last_move>>MODE_SHIFT&0xFF;
         //printf("                             check_data.in_check is %d\n", check_data.in_check);
         ep1 = ep2 = msp; Promo = 0;
 
@@ -660,7 +667,7 @@ clock_t ttt[30];
         gen_pincheck_moves(color, check_data, pstack, ppos, psp);
 
         // Detect contact checks.
-        get_contact_check(color, lastply, check_data);
+        get_contact_check(color, last_move, check_data);
 
         // Remove moves with pinned pieces if in check.
         if(check_data.in_check) {
@@ -707,7 +714,7 @@ clock_t ttt[30];
         int i, k, v, y, m, p;
 
         /* check for pawns, through 2 squares on board */
-        v = color - 48; m = color | PAWNS;
+        v = color - 48; m = color | PAWNS_INDEX;
         if((board[x+v+RT]&m)==m) return 1; 
         if((board[x+v+LT]&m)==m) return 2;
 
@@ -738,7 +745,7 @@ clock_t ttt[30];
         return 0;
     }
 
-void perft(int color, int lastply, int depth, int d)
+void perft(int color, int last_move, int depth, int d)
 {   /* recursive perft, with in-lined make/unmake */
     int i, j, h, oldpiece, store;
     int first_move, piece, victim, from, to, capt, mode;
@@ -748,7 +755,7 @@ void perft(int color, int lastply, int depth, int d)
 
     TIME(17)
     first_move = msp; /* new area on move stack */
-    gen_moves(color, lastply, d); /* generate moves */
+    gen_moves(color, last_move, d); /* generate moves */
     nodecount++;
     lep2 = ep2; lkm = Kmoves;
 
@@ -768,8 +775,8 @@ path[d] = stack[i];
         {   /* e.p. or castling, usually skipped  */
             /* e.p.:shift capture square one rank */
             if(mode < EP_MODE)
-            {   if(((board[to+RT]^piece) & (COLOR|PAWNS)) == COLOR ||
-                   ((board[to+LT]^piece) & (COLOR|PAWNS)) == COLOR)
+            {   if(((board[to+RT]^piece) & (COLOR|PAWNS_INDEX)) == COLOR ||
+                   ((board[to+LT]^piece) & (COLOR|PAWNS_INDEX)) == COLOR)
                     Index = mode * 76265;
             } else
             if(mode == EP_MODE) capt ^= 0x10; else
@@ -778,9 +785,9 @@ path[d] = stack[i];
                 oldpiece = piece; pos[piece-WHITE]=0;
                 /* set up for new Queen first */
                 piece = --FirstSlider[color]+WHITE;
-                kind[piece-WHITE] = QUEEN;
+                kind[piece-WHITE] = QUEEN_KIND;
                 code[piece-WHITE] = C_QUEEN;
-                Zob[piece-WHITE]  = Keys + 128*QUEEN + (color&BLACK)/8 - 0x22;
+                Zob[piece-WHITE]  = Keys + 128*QUEEN_KIND + (color&BLACK)/8 - 0x22;
                 pos[piece-WHITE]  = from;
                 HashKey ^= Zobrist(piece, from) ^ Zobrist(oldpiece, from);
                 HighKey ^= Zobrist(piece, from+8) ^ Zobrist(oldpiece, from+8);
@@ -911,17 +918,17 @@ quick:
                     pos[piece-WHITE] = from;
                     board[from] = piece;
                 } else
-                if(--kind[piece-WHITE] >= KNIGHT)
+                if(--kind[piece-WHITE] >= KNIGHT_KIND)
                 {
                     HashKey ^= Zobrist(piece, to);
                     HighKey ^= Zobrist(piece, to+8);
-                    if(kind[piece-WHITE] == KNIGHT)
+                    if(kind[piece-WHITE] == KNIGHT_KIND)
                     {   /* Knight must be put in Knight list */
                         FirstSlider[color]++;
                         piece = ++LastKnight[color]+WHITE;
                         pos[piece-WHITE]  = from;
-                        kind[piece-WHITE] = KNIGHT;
-                        Zob[piece-WHITE]  = Keys + 128*KNIGHT
+                        kind[piece-WHITE] = KNIGHT_KIND;
+                        Zob[piece-WHITE]  = Keys + 128*KNIGHT_KIND
                                                  + (color&BLACK)/8 - 0x22;
                     } else Zob[piece-WHITE] -= 128;
                     code[piece-WHITE] = capts[kind[piece-WHITE]];
@@ -930,7 +937,7 @@ quick:
                     goto minor; /* try minor promotion */
                 } else
                 {   /* All promotions tried, demote to Pawn again */
-                    kind[piece-WHITE] = QUEEN; /* put Q back for hash store */
+                    kind[piece-WHITE] = QUEEN_KIND; /* put Q back for hash store */
                     piece = oldpiece; LastKnight[color]--;
                     pos[piece-WHITE] = from;
                     board[from] = piece;
@@ -975,7 +982,7 @@ quick:
     }
 }
 
-void doit(int Dep, int Col, int split) {
+void doit(int Dep, int color, int split) {
 
     Split = split;
     
@@ -991,11 +998,11 @@ void doit(int Dep, int Col, int split) {
 
     for(int i=1; i<=Dep; i++)
     {
-        int lastPly = ((epSqr^16)<<MODE_SHIFT) + checker(Col);
+        int last_move = ((epSqr^16)<<MODE_SHIFT) + checker(color);
         clock_t t = clock();
         count = epcnt = xcnt = ckcnt = cascnt = promcnt = 0;
         for(int j=0; j<10; j++) accept[j] = reject[j] = 0, ttt[j] = t;
-        perft(Col, lastPly, i, 1);
+        perft(color, last_move, i, 1);
         t = clock()-t;
         printf("perft(%2d)= %12lld (%6.3f sec)\n", i, count, t*(1./CLOCKS_PER_SEC));
         if(HashFlag) {
