@@ -579,10 +579,9 @@ clock_t ttt[30];
 
     // All slider moves.
     void gen_slider_moves(int color) {
-        for(int slider_index = last_slider_index(color); slider_index>=FirstSlider[color]; slider_index--)
-        {   
+        for(int slider_index = last_slider_index(color); slider_index>=FirstSlider[color]; slider_index--) {   
             int slider_pos = pos[slider_index]; if(slider_pos==0) continue;
-            int z = slider_pos<<8;
+            int slider_kind = kind[slider_index];
 
             auto MM = [=](int dir) {
                 int to = slider_pos;
@@ -591,12 +590,13 @@ clock_t ttt[30];
                 } while(!is_occupied(to));
             };
 
-            if((kind[slider_index]-3)&2) {
-                // All 4 rook rays for R and Q.
+            if(slider_kind != BISHOP_KIND) {
+                // All 4 rook rays for Rook and Queen.
                 MM(RT); MM(LT); MM(FW); MM(BW);
             }
-            if((kind[slider_index]-3)&1) {
-                // All 4 bishop rays for B and Q.
+            
+            if(slider_kind != ROOK_KIND) {
+                // All 4 bishop rays for Bishop and Queen.
                 MM(FL); MM(BR); MM(FR); MM(BL);
             }
         }

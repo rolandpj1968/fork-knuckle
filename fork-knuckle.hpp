@@ -47,6 +47,7 @@ static const int KNIGHT_KIND = 3;
 static const int W_PAWN_KIND = 2; // Moves forwards
 static const int B_PAWN_KIND = 1; // Moves backwards
 
+
 // Piece indexes in kind[], pos[] etc. tables (at start).
 // For each of Black then White, layout is:
 //    0    -> King
