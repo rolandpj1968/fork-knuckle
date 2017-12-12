@@ -83,7 +83,7 @@ uint64_t HashKey=8729767686LL, HighKey=1234567890LL, count, epcnt, xcnt, ckcnt, 
 FILE *f;
 clock_t ttt[30];
 
-    void push_move(int from, int to) { stack[msp++] = from + to; }
+    void push_move_old(int from, int to) { stack[msp++] = from + to; }
 
     /**
      * Make an empty board surrounded by guard band of uncapturable pieces.
@@ -340,12 +340,17 @@ clock_t ttt[30];
         }
     };
 
+    // Position of the King.
+    int king_pos(int color) {
+        return pos[color-WHITE];
+    }
+
     // All pinned pieces are removed from lists.
     // All their remaining legal moves are generated.
     // All distant checks are detected.
     void gen_pincheck_moves(int color, CheckData& check_data, int pstack[], int ppos[], int& psp) {
         /* Some general preparation */
-        int k = pos[color-WHITE];           /* position of my King */
+        int k = king_pos(color);           /* position of my King */
         int forward = 48- color;            /* forward step */
         int rank = 0x58 - (forward>>1);     /* 4th/5th rank */
         int prank = 0xD0 - 5*(color>>1);    /* 2nd/7th rank */
@@ -383,21 +388,21 @@ clock_t ttt[30];
 
                         if(kind[m]<3)
                         {   /* flag promotions */
-                            if(!((prank^x)&0xF0)) z |= 0xA1000000;
+                            if(!((prank^x)&0xF0)) z |= PROMO_SHIFTED;
                             y = x + forward; 
                             if(!(v&7)) /* Pawn along file */
                             {   /* generate non-captures  */
                                 if(!(board[y]&COLOR))
-                                {   push_move(z,y);
+                                {   push_move_old(z,y);
                                     y += forward;Promo++;
                                     if(!((board[y]&COLOR) | ((rank^y)&0xF0)))
-                                        push_move(z,y|y<<24);
+                                        push_move_old(z,y|y<<MODE_SHIFT);
                                 }
                             } else
                             {   /* diagonal pin       */
                                 /* try capture pinner */
-                                if(y+RT==j) { Promo++; push_move(z,y+RT); }
-                                if(y+LT==j) { Promo++; push_move(z,y+LT); }
+                                if(y+RT==j) { Promo++; push_move_old(z,y+RT); }
+                                if(y+LT==j) { Promo++; push_move_old(z,y+LT); }
                             }
                         } else
                         if(code[m]&capt_code[j-k]&C_DISTANT)
@@ -405,12 +410,12 @@ clock_t ttt[30];
                             y = x;
                             do{ /* moves upto capt. pinner*/
                                 y += v;
-                                push_move(z,y);
+                                push_move_old(z,y);
                             } while(y != j);
                             y = x;
                             while((y-=v) != k)
                             {   /* moves towards King     */
-                                push_move(z,y);
+                                push_move_old(z,y);
                             }
                         }
                     }
@@ -423,29 +428,27 @@ clock_t ttt[30];
         // All distant checks are detected.
     }
 
-    // Determine if there are contact checks.
-    void get_contact_checks(int color, int lastply, CheckData& check_data) {
-        int k = pos[color-WHITE];           // King position
+    // Determine if there is a contact check (there can only be one).
+    void get_contact_check(int color, int lastply, CheckData& check_data) {
+        int k = king_pos(color);           // King position
         int y = lastply&0xFF;
 
-        //printf("                                                     - king is at %2x, lastmove at %2x, capcode %2x, code %2x C_C %2x\n", k, y, capt_code[k-y], code[board[y]-WHITE], C_CONTACT);
         if(capt_code[k-y] & code[board[y]-WHITE] & C_CONTACT) {
             check_data.add_contact_check(y, delta_vec[y-k]);
-            //printf("                                       contact check - king is at %2x, lastmove at %2x\n", k, y);
         }
     }
 
     // Generate castling moves.
     void gen_castling_moves(int color) {
         if(!(color&CasRights)) {
-            int k = pos[color-WHITE];           // King position
+            int k = king_pos(color);           // King position
             
             if(!((board[k+RT]^DUMMY)|(board[k+RT+RT]^DUMMY)|
                  (CasRights&color>>4)))
-                push_move(k<<8,k+2+0xB0000000+0x3000000);
+                push_move_old(k<<8,k+2+0xB0000000+0x3000000);
             if(!((board[k+LT]^DUMMY)|(board[k+LT+LT]^DUMMY)|(board[k+LT+LT+LT]^DUMMY)|
                  (CasRights&color>>2)))
-                push_move(k<<8,k-2+0xB0000000-0x4000000);
+                push_move_old(k<<8,k-2+0xB0000000-0x4000000);
         }
     }
 
@@ -454,10 +457,10 @@ clock_t ttt[30];
         int mask = color | PAWNS;
 
         int x = ep_flag+1;
-        if((board[x]&mask)==mask) push_move(x<<8,(ep_flag^0x10)|0xA0000000);
+        if((board[x]&mask)==mask) push_move_old(x<<8,(ep_flag^0x10)|EP_SHIFTED);
 
         x = ep_flag-1;
-        if((board[x]&mask)==mask) push_move(x<<8,(ep_flag^0x10)|0xA0000000);
+        if((board[x]&mask)==mask) push_move_old(x<<8,(ep_flag^0x10)|EP_SHIFTED);
     }
 
     // On contact check only King retreat or capture helps.
@@ -471,9 +474,9 @@ clock_t ttt[30];
         int z; int x; z = x = checker;
         int y = x - forward;
         
-        if(!((prank^y)&0xF0)) Promo++,z |= 0xA1000000;
-        if((board[y+RT]&m)==m && pos[board[y+RT]-WHITE]) push_move((y+RT)<<8,z);
-        if((board[y+LT]&m)==m && pos[board[y+LT]-WHITE]) push_move((y+LT)<<8,z);
+        if(!((prank^y)&0xF0)) Promo++,z |= PROMO_SHIFTED;
+        if((board[y+RT]&m)==m && pos[board[y+RT]-WHITE]) push_move_old((y+RT)<<8,z);
+        if((board[y+LT]&m)==m && pos[board[y+LT]-WHITE]) push_move_old((y+LT)<<8,z);
 
         // Knights
         for(int p=LastKnight[color]; p>color-WHITE; p--)
@@ -482,7 +485,7 @@ clock_t ttt[30];
             if(k==0) continue;
             int m = code[p];
             int i = capt_code[k-x];
-            if(i&m) push_move(k<<8,x);
+            if(i&m) push_move_old(k<<8,x);
         }
 
         // Sliders
@@ -497,7 +500,7 @@ clock_t ttt[30];
                 int v = delta_vec[k-x];
                 y = x;
                 while(board[y+=v]==DUMMY);
-                if(y==k) push_move(k<<8,x);
+                if(y==k) push_move_old(k<<8,x);
             }
         }
     }
@@ -515,19 +518,19 @@ clock_t ttt[30];
             int z = x<<8;
 
             /* flag promotions */
-            if(!((prank^x)&0xF0)) Promo++,z |= 0xA1000000;
+            if(!((prank^x)&0xF0)) Promo++,z |= PROMO_SHIFTED;
 
             /* capture moves */
             int y = x + forward;
-            if(!(board[y+LT]&mask)) push_move(z,y+LT);
-            if(!(board[y+RT]&mask)) push_move(z,y+RT);
+            if(!(board[y+LT]&mask)) push_move_old(z,y+LT);
+            if(!(board[y+RT]&mask)) push_move_old(z,y+RT);
             
             /* non-capture moves */
             if(!(board[y]&COLOR))
-            {   push_move(z,y);
+            {   push_move_old(z,y);
                 y += forward;
                 if(!((board[y]&COLOR) | ((rank^y)&0xF0)))
-                    push_move(z,y|y<<24);        /* e.p. flag */
+                    push_move_old(z,y|y<<MODE_SHIFT);        /* e.p. flag */
             }
         }
     }
@@ -539,14 +542,14 @@ clock_t ttt[30];
             int z = x<<8;
 
             // Always 8 direction; unroll loop to avoid branches.
-            if(!(board[x+FLL]&color)) push_move(z,x+FLL);
-            if(!(board[x+FFL]&color)) push_move(z,x+FFL);
-            if(!(board[x+FFR]&color)) push_move(z,x+FFR);
-            if(!(board[x+FRR]&color)) push_move(z,x+FRR);
-            if(!(board[x+BRR]&color)) push_move(z,x+BRR);
-            if(!(board[x+BBR]&color)) push_move(z,x+BBR);
-            if(!(board[x+BBL]&color)) push_move(z,x+BBL);
-            if(!(board[x+BLL]&color)) push_move(z,x+BLL);
+            if(!(board[x+FLL]&color)) push_move_old(z,x+FLL);
+            if(!(board[x+FFL]&color)) push_move_old(z,x+FFL);
+            if(!(board[x+FFR]&color)) push_move_old(z,x+FFR);
+            if(!(board[x+FRR]&color)) push_move_old(z,x+FRR);
+            if(!(board[x+BRR]&color)) push_move_old(z,x+BRR);
+            if(!(board[x+BBR]&color)) push_move_old(z,x+BBR);
+            if(!(board[x+BBL]&color)) push_move_old(z,x+BBL);
+            if(!(board[x+BLL]&color)) push_move_old(z,x+BLL);
         }
     }
 
@@ -560,24 +563,24 @@ clock_t ttt[30];
             if((kind[p]-3)&2) {
                 // Scan 4 rook rays for R and Q.
                 int y = x, h;
-                do{ if(!((h=board[y+=RT])&color)) push_move(z,y); } while(!(h&COLOR));
+                do{ if(!((h=board[y+=RT])&color)) push_move_old(z,y); } while(!(h&COLOR));
                 y = x;
-                do{ if(!((h=board[y+=LT])&color)) push_move(z,y); } while(!(h&COLOR));
+                do{ if(!((h=board[y+=LT])&color)) push_move_old(z,y); } while(!(h&COLOR));
                 y = x;
-                do{ if(!((h=board[y+=FW])&color)) push_move(z,y); } while(!(h&COLOR));
+                do{ if(!((h=board[y+=FW])&color)) push_move_old(z,y); } while(!(h&COLOR));
                 y = x;
-                do{ if(!((h=board[y+=BW])&color)) push_move(z,y); } while(!(h&COLOR));
+                do{ if(!((h=board[y+=BW])&color)) push_move_old(z,y); } while(!(h&COLOR));
             }
             if((kind[p]-3)&1) {
                 // Scan 4 bishop rays for B and Q.
                 int y = x, h;
-                do{ if(!((h=board[y+=FL])&color)) push_move(z,y); } while(!(h&COLOR));
+                do{ if(!((h=board[y+=FL])&color)) push_move_old(z,y); } while(!(h&COLOR));
                 y = x;
-                do{ if(!((h=board[y+=BR])&color)) push_move(z,y); } while(!(h&COLOR));
+                do{ if(!((h=board[y+=BR])&color)) push_move_old(z,y); } while(!(h&COLOR));
                 y = x;
-                do{ if(!((h=board[y+=FR])&color)) push_move(z,y); } while(!(h&COLOR));
+                do{ if(!((h=board[y+=FR])&color)) push_move_old(z,y); } while(!(h&COLOR));
                 y = x;
-                do{ if(!((h=board[y+=BL])&color)) push_move(z,y); } while(!(h&COLOR));
+                do{ if(!((h=board[y+=BL])&color)) push_move_old(z,y); } while(!(h&COLOR));
             }
         }
     }
@@ -585,7 +588,7 @@ clock_t ttt[30];
     // Remove moves that don't solve distant check by capturing checker or interposing on check ray.
     void remove_illegal_moves(int color, int first_move, int& msp, CheckData& check_data) {
         if(check_data.in_check) {
-            int k = pos[color-WHITE];           // King position.
+            int k = king_pos(color);           // King position.
             for(int i=first_move; i<msp; i++) { // Go through all moves.
                 int j = stack[i]&0xFF;          // To position.
                 
@@ -619,18 +622,18 @@ clock_t ttt[30];
 
     // All king moves.
     void gen_king_moves(int color) {
-        int x = pos[color-WHITE]; // King position
+        int x = king_pos(color); // King position
         int z = x<<8;
 
         // Always 8 direction, unroll loop to avoid branches.
-        if(!(board[x+RT]&color)) push_move(z,x+RT);
-        if(!(board[x+FR]&color)) push_move(z,x+FR);
-        if(!(board[x+FW]&color)) push_move(z,x+FW);
-        if(!(board[x+FL]&color)) push_move(z,x+FL);
-        if(!(board[x+LT]&color)) push_move(z,x+LT);
-        if(!(board[x+BL]&color)) push_move(z,x+BL);
-        if(!(board[x+BW]&color)) push_move(z,x+BW);
-        if(!(board[x+BR]&color)) push_move(z,x+BR);
+        if(!(board[x+RT]&color)) push_move_old(z,x+RT);
+        if(!(board[x+FR]&color)) push_move_old(z,x+FR);
+        if(!(board[x+FW]&color)) push_move_old(z,x+FW);
+        if(!(board[x+FL]&color)) push_move_old(z,x+FL);
+        if(!(board[x+LT]&color)) push_move_old(z,x+LT);
+        if(!(board[x+BL]&color)) push_move_old(z,x+BL);
+        if(!(board[x+BW]&color)) push_move_old(z,x+BW);
+        if(!(board[x+BR]&color)) push_move_old(z,x+BR);
 
         // Mmm, why no check for move-into-check???
     }
@@ -649,20 +652,18 @@ clock_t ttt[30];
     void gen_moves(int color, int lastply, int d) {
         CheckData check_data;
         int pstack[12], ppos[12], psp=0, first_move=msp;
-        int ep_flag = lastply>>24&0xFF;
+        int ep_flag = lastply>>MODE_SHIFT&0xFF;
         //printf("                             check_data.in_check is %d\n", check_data.in_check);
         ep1 = ep2 = msp; Promo = 0;
 
         // Pinned-piece moves and non-constanct check detection.
-        gen_pincheck_moves(color, check_data/*in_check, checker, check_dir*/, pstack, ppos, psp);
-        //printf("                             check_data.in_check is %d\n", check_data.in_check);
+        gen_pincheck_moves(color, check_data, pstack, ppos, psp);
 
         // Detect contact checks.
-        get_contact_checks(color, lastply, check_data/*in_check, checker, check_dir*/);
-        //printf("                             check_data.in_check is %d\n", check_data.in_check);
+        get_contact_check(color, lastply, check_data);
 
         // Remove moves with pinned pieces if in check.
-        if(check_data.in_check) { //printf("                              in check!!!!!!\n");
+        if(check_data.in_check) {
             msp = first_move;
         }
         
@@ -699,8 +700,6 @@ clock_t ttt[30];
 
         // Put pieces that were parked onto pin stack back in lists.
         restore_pinned_pieces(pstack, ppos, psp);
-
-        //printf("                        gen_moves - #moves %d\n", (msp-first_move));
     }
 
     // Full check for captures on square x by all opponent pieces.
@@ -760,7 +759,7 @@ void perft(int color, int lastply, int depth, int d)
       /* fetch move from move stack */
         from = (stack[i]>>8)&0xFF;
         to = capt = stack[i]&0xFF;
-        mode = (unsigned int)stack[i]>>24;
+        mode = (unsigned int)stack[i]>>MODE_SHIFT;
 path[d] = stack[i];
         piece  = board[from];
 
@@ -768,13 +767,13 @@ path[d] = stack[i];
         if(mode)
         {   /* e.p. or castling, usually skipped  */
             /* e.p.:shift capture square one rank */
-            if(mode < 0xA0)
+            if(mode < EP_MODE)
             {   if(((board[to+RT]^piece) & (COLOR|PAWNS)) == COLOR ||
                    ((board[to+LT]^piece) & (COLOR|PAWNS)) == COLOR)
                     Index = mode * 76265;
             } else
-            if(mode == 0xA0) capt ^= 0x10; else
-            if(mode == 0xA1)
+            if(mode == EP_MODE) capt ^= 0x10; else
+            if(mode == PROMO_MODE)
             {   /* Promotion. Shuffle piece list :( */
                 oldpiece = piece; pos[piece-WHITE]=0;
                 /* set up for new Queen first */
@@ -866,8 +865,8 @@ minor:
         // Makes sense, since we treat pinned pieces specially in gen_moves already - only way to move into check is by king move.
         // Seems more efficient to check king for move-into-check by generating opposition attack board
         //   once in gen_moves???
-        if((piece != color && mode != 0xA0) ||
-                 !capturable(color^COLOR, pos[color-WHITE]))
+        if((piece != color && mode != EP_MODE) ||
+                 !capturable(color^COLOR, king_pos(color)))
         {
       /* recursion or count end leaf */
             if(depth == 1 ) {
@@ -903,8 +902,8 @@ minor:
         board[from] = piece;
 
 quick:
-        if((unsigned int) stack[i]>=0xA1000000)   /* was castling or prom */
-        {   if(mode==0xA1)
+        if((unsigned int) stack[i]>=PROMO_SHIFTED)   /* was castling or prom */
+        {   if(mode==PROMO_MODE)
             {
                 if(noUnder) {
                     FirstSlider[color]++;
@@ -992,7 +991,7 @@ void doit(int Dep, int Col, int split) {
 
     for(int i=1; i<=Dep; i++)
     {
-        int lastPly = ((epSqr^16)<<24) + checker(Col);
+        int lastPly = ((epSqr^16)<<MODE_SHIFT) + checker(Col);
         clock_t t = clock();
         count = epcnt = xcnt = ckcnt = cascnt = promcnt = 0;
         for(int j=0; j<10; j++) accept[j] = reject[j] = 0, ttt[j] = t;

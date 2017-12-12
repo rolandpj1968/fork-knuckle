@@ -61,4 +61,13 @@ static const int QUEEN_DIR[8]   = {RT, LT, FW, BW, FL, BR, FR, BL};
 static const int KING_ROSE[8]   = {RT, FR, FW, FL, LT, BL, BW, BR};
 static const int KNIGHT_ROSE[8] = {FRR, FFR, FFL, FLL, BLL, BBL, BBR, BRR};
 
+static const int MODE_SHIFT = 24;
+
+// Move modes
+static const int EP_MODE    = 0xA0;
+static const int PROMO_MODE = 0xA1;
+
+static const int EP_SHIFTED    = EP_MODE    << MODE_SHIFT;
+static const int PROMO_SHIFTED = PROMO_MODE << MODE_SHIFT;
+
 #endif //def PERFTCPP_HPP
