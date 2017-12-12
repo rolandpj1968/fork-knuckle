@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <math.h>
 #include <string.h>
+#include <stdint.h>
 
 #include "fork-knuckle.hpp"
 
@@ -25,18 +26,18 @@ char *(names[MAXTIM])={"pintest", "contact", "castle", "ep-capt", "capture",
 #endif
 
 /* Zobris key layout */
-#define Zobrist(A,B) (*(long long int *) (Zob[(A)-WHITE] + (B)))
+#define Zobrist(A,B) (*(int64_t *) (Zob[(A)-WHITE] + (B)))
 #define XSIZE (8*1024)
 union _bucket
 {
   struct { // one 32-byte entry
-    unsigned long long int Signature1;
-    unsigned long long int Signature2;
-    unsigned long long int longCount;
-    unsigned long long int Dummy;
+      uint64_t Signature1;
+    uint64_t Signature2;
+    uint64_t longCount;
+    uint64_t Dummy;
   } l;
   struct { // two packed 16-byte entries
-    unsigned long long int Signature[2];
+    uint64_t Signature[2];
     unsigned int Count[2];
     unsigned int Extension[2];
   } s;
@@ -45,7 +46,7 @@ union _bucket
 struct P {
     
 int rseed = 87105015;
-unsigned long long int accept[30], reject[30], miss[30];
+    uint64_t accept[30], reject[30], hit[30], miss[30];
 char *Zob[2*NPCE];
 unsigned char
         pc[NPCE*4+1], /* piece list, equivalenced with various piece info  */
@@ -78,7 +79,7 @@ char noUnder = 0;
 char Keys[1040];
 int path[100];
 int stack[1024], msp = 0, ep1, ep2, Kmoves, Promo, Split, epSqr, HashSize, HashSection;
-unsigned long long int HashKey=8729767686LL, HighKey=1234567890LL, count, epcnt, xcnt, ckcnt, cascnt, promcnt, nodecount; /* stats */
+uint64_t HashKey=8729767686LL, HighKey=1234567890LL, count, epcnt, xcnt, ckcnt, cascnt, promcnt, nodecount;
 FILE *f;
 clock_t ttt[30];
 
@@ -737,7 +738,7 @@ void perft(int color, int lastply, int depth, int d)
     int i, j, h, oldpiece, store;
     int first_move, piece, victim, from, to, capt, mode;
     int SavRights = CasRights, lep2, lkm, Index;
-    unsigned long long int ocnt=count, OldKey = HashKey, OldHKey = HighKey, SavCnt;
+    uint64_t ocnt=count, OldKey = HashKey, OldHKey = HighKey, SavCnt;
     union _bucket *Bucket;
 
     TIME(17)
@@ -807,7 +808,7 @@ path[d] = stack[i];
             Index += (CasRights << 4) +color*919581;
             if(depth>2) {
               path[d] = stack[i];
-              if(depth > 7) { // the count will not fit in 32 bits
+              if(true || depth > 7) { // the count will not fit in 32 bits
                  if(depth > 9) {
                    int i = HashSection, j = depth-9;
                    while(j--) i >>= 1;
@@ -869,7 +870,7 @@ minor:
                 perft(COLOR-color, stack[i], depth-1, d+1);
                 if(HashFlag)
                 {
-                    if(depth > 7) { //large entry
+                    if(true || depth > 7) { //large entry
                         Bucket->l.Signature1 = HighKey;
                         Bucket->l.Signature2 = HashKey;
                         Bucket->l.longCount  = count - SavCnt;
@@ -976,7 +977,7 @@ void doit(int Dep, int Col, int split) {
                  (HashSize+2) >> (HashSize<64*1024 ? 6: 16),
                  HashSize<64*1024 ? 'k' : 'M' );
     else         printf("No hashing");
-    printf(", bulk counting in horizon nodes\n\n");
+    printf("\n\n");
     f = fopen("log.txt", "a");
     fprintf(f, "perft %d -%d\n", Dep, Split);
 
@@ -989,6 +990,11 @@ void doit(int Dep, int Col, int split) {
         perft(Col, lastPly, i, 1);
         t = clock()-t;
         printf("perft(%2d)= %12lld (%6.3f sec)\n", i, count, t*(1./CLOCKS_PER_SEC));
+        if(HashFlag) {
+            for(int j=0; j<10; j++) {
+                //printf("    depth %2d: accept %12ld reject %12ld (%6.4lf)\n", j, accept[j], reject[j], (double)accept[j]/reject[j]);
+            }
+        }
     }
     fclose(f);
 }
@@ -998,7 +1004,7 @@ void setup_hash(int size) {
 
     {    HashSection = (1<<(HashSize-3)) - 1; HashSize = (1<<HashSize) - 2;
          Hash = (union _bucket *) calloc(HashSize+4, sizeof(union _bucket) );
-         Hash = (union _bucket *) (((long)Hash + 63) & ~63);
+         Hash = (union _bucket *) (((uint64_t)Hash + 63) & ~63);
          printf("Hash-table size = %x, Starts at %lx,section = %x\n", HashSize+1, (long)Hash, HashSection);
          HashFlag++;
          for(int i=128; i<1040; i++) Keys[i] = rand()>>6;
