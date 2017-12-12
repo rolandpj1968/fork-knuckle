@@ -120,44 +120,41 @@ clock_t ttt[30];
 
     }
 
-    /** 
-     * initialize piece list to initial setup 
-     */
+    // Initialize piece list to starting position.
     void piece_init(void) {
-        /* piece-number assignment of first row, and piece types */
-        static const unsigned char array[8]    = {   12,      1,     14,    11,    0,     15,      2,   13 }; // ??? What are these - offsets in kind, pos???
 
-        /* initalize piece type and position, in initial setup */
-        for(int i=0; i<8; i++) {
-            kind[array[i]+WHITE] = BACK_ROW_KINDS[i];
-            kind[array[i]]       = BACK_ROW_KINDS[i];
-            kind[i+PAWNS_INDEX]        = 1;
-            kind[i+PAWNS_INDEX+WHITE]  = 2;
+        // Piece kind and position
+        for(int file = 0; file < 8; file++) {
+            kind[BACK_ROW_INDEXES[file]]       = BACK_ROW_KINDS[file];
+            kind[BACK_ROW_INDEXES[file]+WHITE] = BACK_ROW_KINDS[file];
+            kind[file+PAWNS_INDEX]             = B_PAWN_KIND;
+            kind[file+PAWNS_INDEX+WHITE]       = W_PAWN_KIND;
 
-            pos[array[i]]        = i+0x22;
-            pos[array[i]+WHITE]  = i+0x92;
-            pos[i+PAWNS_INDEX]         = i+0x32;
-            pos[i+PAWNS_INDEX+WHITE]   = i+0x82;
+            pos[BACK_ROW_INDEXES[file]]        = file+0x22;
+            pos[BACK_ROW_INDEXES[file]+WHITE]  = file+0x92;
+            pos[file+PAWNS_INDEX]              = file+0x32;
+            pos[file+PAWNS_INDEX+WHITE]        = file+0x82;
         }
 
-        /* set capture codes for each piece */
+        // Capture codes
         for(int i=0; i<NPCE; i++) { code[i] = capts[kind[i]]; }
 
-        /* set castling spoilers (King and both original Rooks) */
-        cstl[0]        = WHITE;
-        cstl[12]       = WHITE>>2;
-        cstl[13]       = WHITE>>4;
-        cstl[0 +WHITE] = BLACK;
-        cstl[12+WHITE] = BLACK>>2;
-        cstl[13+WHITE] = BLACK>>4;
+        // Castling spoilers (King and both original Rooks)
+        cstl[KING_INDEX] = WHITE;
+        cstl[Q_ROOK_INDEX]         = WHITE>>2;
+        cstl[K_ROOK_INDEX]         = WHITE>>4;
+        cstl[KING_INDEX + WHITE]   = BLACK;
+        cstl[Q_ROOK_INDEX + WHITE] = BLACK>>2;
+        cstl[K_ROOK_INDEX + WHITE] = BLACK>>4;
 
-        /* piece counts (can change when we compactify lists, or promote) */
-        LastKnight[WHITE]  =  2;
-        FirstSlider[WHITE] = 11;
-        FirstPawn[WHITE]   = 16;
-        LastKnight[BLACK]  =  2+WHITE;
-        FirstSlider[BLACK] = 11+WHITE;
-        FirstPawn[BLACK]   = 16+WHITE;
+        // Piece indexes (can change when we compactify lists, or promote).
+        // Doesn't look like any compaction is done at present.
+        LastKnight[WHITE]  = K_KNIGHT_INDEX;
+        FirstSlider[WHITE] = QUEEN_INDEX;
+        FirstPawn[WHITE]   = PAWNS_INDEX;
+        LastKnight[BLACK]  = K_KNIGHT_INDEX + WHITE;
+        FirstSlider[BLACK] = QUEEN_INDEX + WHITE;
+        FirstPawn[BLACK]   = PAWNS_INDEX + WHITE;
 
         Zob[DUMMY-WHITE] = Keys-0x22;
     }

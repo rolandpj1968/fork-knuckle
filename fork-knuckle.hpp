@@ -30,8 +30,10 @@ static const int DUMMY =  (WHITE-1+0x80);
 
 static const int PAWNS_INDEX =  0x10;
 
+// Number of entries in kind[], pos[] etc. tables - enough extra space for pawns to be promoted in various ways.
 static const int NPCE =   (2*WHITE);
 
+// Piece kinds
 static const int KING_KIND =   7;
 static const int QUEEN_KIND =  6;
 static const int ROOK_KIND =   5;
@@ -40,9 +42,28 @@ static const int KNIGHT_KIND = 3;
 static const int W_PAWN_KIND = 2; // Moves forwards
 static const int B_PAWN_KIND = 1; // Moves backwards
 
-static const unsigned char BACK_ROW_KINDS[8] = { ROOK_KIND, KNIGHT_KIND, BISHOP_KIND, QUEEN_KIND, KING_KIND, BISHOP_KIND, KNIGHT_KIND, ROOK_KIND };
+// Piece indexes in kind[], pos[] etc. tables (at start).
+// Layout is:
+//    0    -> King
+//    1-2  -> Knights
+//    3-10 -> space for promotions, upwards from 3 for Knight promo's, downwards from 10 for slider promo's
+//   11-15 -> sliders (Queen, Rook, Rook, Bishop, Bishop)
+//   16-23 -> Pawns
+static const int Q_ROOK_INDEX   = 12;
+static const int Q_KNIGHT_INDEX =  1;
+static const int Q_BISHOP_INDEX = 14;
+static const int QUEEN_INDEX    = 11;
+static const int KING_INDEX     =  0;
+static const int K_BISHOP_INDEX = 15;
+static const int K_KNIGHT_INDEX =  2;
+static const int K_ROOK_INDEX   = 13;
 
-// Direction offsets
+// Back row piece layout (at start).
+static const int BACK_ROW_KINDS[8]   = { ROOK_KIND,    KNIGHT_KIND,    BISHOP_KIND,    QUEEN_KIND,  KING_KIND,  BISHOP_KIND,    KNIGHT_KIND,    ROOK_KIND };
+// Indexes of back row pieces in kind[], pos[] etc. tables (at start).
+static const int BACK_ROW_INDEXES[8] = { Q_ROOK_INDEX, Q_KNIGHT_INDEX, Q_BISHOP_INDEX, QUEEN_INDEX, KING_INDEX, K_BISHOP_INDEX, K_KNIGHT_INDEX, K_ROOK_INDEX };
+
+// Direction offsets in 0x88 board.
 static const int FW =  0x10; // forwards
 static const int BW = -0x10; // backwards
 static const int LT = -0x01; // left
