@@ -407,15 +407,6 @@ clock_t ttt[30];
     // @return If the handler fn returns non-0 then we early out with that value, else return 0.
     int foreach_slider_value(int color, std::function<int(int, int)> slider_handler_fn) {
         return foreach_piece_value(first_slider_index(color), last_slider_index(color), slider_handler_fn);
-        // for(int slider_index = last_slider_index(color); slider_index >= color_to_first_slider_index[color]; slider_index--) {
-        //     int slider_pos = index_to_pos[slider_index]; if(slider_pos == 0) continue;
-
-        //     int value = slider_handler_fn(slider_index, slider_pos);
-
-        //     if(value) return value;
-        // }
-
-        // return 0;
     }
 
 
@@ -572,13 +563,13 @@ clock_t ttt[30];
 
     // On contact check only King retreat or capture helps.
     // Use in that case specialized recapture generator.
-    void gen_piece_moves_in_contact_check(int color, int checker) {
+    void gen_piece_moves_in_contact_check(int color, int checker_pos) {
         int forward = forward_dir(color);            // forward step
         int prank = 0xD0 - 5*(color>>1);    // 2nd/7th rank
 
         // check for pawns, through 2 squares on board.
         int m = color | PAWNS_INDEX; // is this index?
-        int z; int x; z = x = checker;
+        int z; int x; z = x = checker_pos;
         int y = x - forward;
         
         if(!((prank^y)&0xF0)) Promo++,z |= PROMO_SHIFTED;
@@ -586,14 +577,13 @@ clock_t ttt[30];
         if((board[y+LT]&m)==m && index_to_pos[board[y+LT]-WHITE]) push_move_old((y+LT)<<8,z);
 
         // Knights
-        for(int p = last_knight_index(color); p > king_index(color); p--)
-        {
-            int k = index_to_pos[p];
-            if(k==0) continue;
-            int m = index_to_capt_code[p];
-            int i = DIR_TO_CAPT_CODE[k-x];
-            if(i&m) push_move_old(k<<8,x);
-        }
+        foreach_knight(color, [=](int knight_index, int knight_pos) {
+                int knight_capt_code = index_to_capt_code[knight_index];
+                int dir_capt_code = DIR_TO_CAPT_CODE[knight_pos - checker_pos];
+                if(is_common_capt_code(knight_capt_code, dir_capt_code)) {
+                    push_move_old(knight_pos<<8, checker_pos);
+                }
+            });
 
         // Sliders
         for(int p=color-WHITE+FL; p>=color_to_first_slider_index[color]; p--)
