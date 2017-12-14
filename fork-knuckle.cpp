@@ -358,7 +358,22 @@ clock_t ttt[30];
     // @return true iff the two capture codes have at least one common flag.
     bool is_common_capt_code(int capt_code_1, int capt_code_2) { return capt_code_1 & capt_code_2; }
 
-    // Iterate through all the knights.
+    // Iterate through the given sub-sequence of the pieces list.
+    // @return If the handler fn returns non-0 then we early out with that value, else return 0.
+    int foreach_piece_value(int color, std::function<int(int, int)> knight_handler_fn) {
+        for(int knight_index = last_knight_index(color); knight_index >= king_index(color); knight_index--) {
+            int knight_pos = index_to_pos[knight_index]; if(knight_pos == 0) continue;
+
+            int value = knight_handler_fn(knight_index, knight_pos);
+
+            if(value) return value;
+        }
+
+        return 0;
+    }
+
+    
+    // Iterate through all the knights of the given color.
     // @return If the handler fn returns non-0 then we early out with that value, else return 0.
     int foreach_knight_value(int color, std::function<int(int, int)> knight_handler_fn) {
         for(int knight_index = last_knight_index(color); knight_index >= king_index(color); knight_index--) {
@@ -372,13 +387,28 @@ clock_t ttt[30];
         return 0;
     }
     
-    // Iterate through all the knights.
+    // Iterate through all the knights of the given color.
     void foreach_knight(int color, std::function<void(int, int)> knight_handler_fn) {
         foreach_knight(color, [=](int knight_index, int knight_pos) {
                 knight_handler_fn(knight_index, knight_pos);
                 return 0; // No early out
             });
     }
+
+    // Iterate through all the knights of the given color.
+    // @return If the handler fn returns non-0 then we early out with that value, else return 0.
+    int foreach_slider_value(int color, std::function<int(int, int)> slider_handler_fn) {
+        for(int slider_index = last_slider_index(color); slider_index >= FirstSlider[color]; slider_index--) {
+            int slider_pos = index_to_pos[slider_index]; if(slider_pos == 0) continue;
+
+            int value = slider_handler_fn(slider_index, slider_pos);
+
+            if(value) return value;
+        }
+
+        return 0;
+    }
+
 
     // @return Position of the King.
     int king_pos(int color) { return index_to_pos[king_index(color)]; }
@@ -778,14 +808,6 @@ clock_t ttt[30];
                 return is_common_capt_code(knight_capt_code, dir_capt_code) ? knight_index+256 : 0;
             });
         if(knight_capture_value) return knight_capture_value;
-        // for(int knight_index = last_knight_index(color); knight_index >= king_index(color); knight_index--) {
-        //     int knight_pos = index_to_pos[knight_index]; if(knight_pos == 0) continue;
-            
-        //     int knight_capt_code = index_to_capt_code[knight_index];
-        //     int dir_capt_code = DIR_TO_CAPT_CODE[knight_pos-piece_pos];
-            
-        //     if(is_common_capt_code(knight_capt_code, dir_capt_code)) return knight_index+256;
-        // }
 
         for(int slider_index = last_slider_index(color); slider_index>=FirstSlider[color]; slider_index--)
         {
