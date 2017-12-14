@@ -402,64 +402,6 @@ clock_t ttt[30];
             });                                                         \
     } while(false)  
     
-    //////////////////////////////////////////////////////////////////////////////////////////////////////////////
-    //
-    // Implementing foreach with lambdas is pretty, but doesn't compile very well - much slower than inline code.
-    //
-    //////////////////////////////////////////////////////////////////////////////////////////////////////////////
-    
-    // Iterate through the given sub-sequence of the pieces list.
-    // @return If the handler fn returns non-0 then we early out with that value, else return 0.
-    inline int foreach_piece_value(const int first_piece_index, const int last_piece_index, const std::function<int(int, int)> piece_handler_fn) {
-        for(int piece_index = first_piece_index; piece_index <= last_piece_index; piece_index++) {
-            int piece_pos = index_to_pos[piece_index]; if(piece_pos == 0) continue;
-
-            int value = piece_handler_fn(piece_index, piece_pos);
-
-            if(value) return value;
-        }
-
-        return 0;
-    }
-
-    // Iterate through the given sub-sequence of the pieces list.
-    inline void foreach_piece(const int first_piece_index, const int last_piece_index, const std::function<void(int, int)> piece_handler_fn) {
-        foreach_piece_value(first_piece_index, last_piece_index, [=](int piece_index, int piece_pos) {
-                piece_handler_fn(piece_index, piece_pos);
-                return 0; // No early out
-            });
-    }
-    
-    // Iterate through all the knights of the given color.
-    // @return If the handler fn returns non-0 then we early out with that value, else return 0.
-    inline int foreach_knight_or_king_value(const int color, const std::function<int(int, int)> piece_handler_fn) {
-        return foreach_piece_value(king_index(color), last_knight_index(color), piece_handler_fn);
-    }
-
-    // Iterate through all the knights of the given color.
-    // @return If the handler fn returns non-0 then we early out with that value, else return 0.
-    inline int foreach_knight_value(const int color, const std::function<int(int, int)> knight_handler_fn) {
-        return foreach_piece_value(first_knight_index(color), last_knight_index(color), knight_handler_fn);
-    }
-    
-    // Iterate through all the knights of the given color.
-    inline void foreach_knight(const int color, const std::function<void(int, int)> knight_handler_fn) {
-        foreach_piece(first_knight_index(color), last_knight_index(color), knight_handler_fn);
-    }
-
-    // Iterate through all the knights of the given color.
-    // @return If the handler fn returns non-0 then we early out with that value, else return 0.
-    inline int foreach_slider_value(const int color, const std::function<int(int, int)> slider_handler_fn) {
-        return foreach_piece_value(first_slider_index(color), last_slider_index(color), slider_handler_fn);
-    }
-
-    // Iterate through all the sliders of the given color.
-    inline void foreach_slider(const int color, const std::function<void(int, int)> slider_handler_fn) {
-        foreach_piece(first_slider_index(color), last_slider_index(color), slider_handler_fn);
-    }
-
-    ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
     // @return Position of the King.
     int king_pos(const int color) const { return index_to_pos[king_index(color)]; }
 
