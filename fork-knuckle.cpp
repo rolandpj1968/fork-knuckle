@@ -417,11 +417,6 @@ clock_t ttt[30];
     // @return Position of the King.
     int king_pos(int color) { return index_to_pos[king_index(color)]; }
 
-    // @return true iff the target square is open or opposition (to take)
-    bool can_move_to(int color, int to) {
-        return !(board[to]&color);
-    }
-
     // @return true iff the given square is occupied by a piece of either color - guards are considered occupied
     bool is_occupied(const int pos) const { return board[pos]&COLOR; }
 
@@ -453,17 +448,22 @@ clock_t ttt[30];
         return false;
     }
     
+    // @return true iff the target square is open or opposition (to take).
+    bool can_move_to(int color, int to) {
+        return !(board[to]&color);
+    }
+
     // Generate one move if to square is available (empty or opponent).
     // @return occupant of target square (for slider loops)
-    void gen_move_to(int color, int from_pos, int to) {
+    void maybe_gen_move_to(int color, int from_pos, int to) {
         if(can_move_to(color, to)) {
             push_move_old((from_pos << 8), to);
         }
     }
 
     // Generate one move if to square is available (empty or opponent).
-    void gen_move(int color, int from_pos, int dir) {
-        gen_move_to(color, from_pos, from_pos + dir);
+    void maybe_gen_move(int color, int from_pos, int dir) {
+        maybe_gen_move_to(color, from_pos, from_pos + dir);
     }
 
     // Forward direction for this color - just a handy trick to get FW/BW, i.e. +/- 0x10.
@@ -658,12 +658,11 @@ clock_t ttt[30];
 
     // All knight moves.
     void gen_knight_moves(int color) {
-        for(int knight_index = last_knight_index(color); knight_index > king_index(color); knight_index--) {
-            int knight_pos = index_to_pos[knight_index]; if(knight_pos == 0) continue;
-            auto M = [=](int dir) { gen_move(color, knight_pos, dir); };
-            // All 8 knight directions.
-            M(FRR); M(FFR); M(FFL); M(FLL); M(BLL); M(BBL); M(BBR); M(BRR);
-        }
+        foreach_knight(color, [=](int knight_index, int knight_pos) {
+                auto M = [=](int dir) { maybe_gen_move(color, knight_pos, dir); };
+                // All 8 knight directions.
+                M(FRR); M(FFR); M(FFL); M(FLL); M(BLL); M(BBL); M(BBR); M(BRR);
+            });
     }
 
     // All slider moves.
@@ -675,7 +674,7 @@ clock_t ttt[30];
             auto MM = [=](int dir) {
                 int to = slider_pos;
                 do{
-                    to += dir; gen_move_to(color, slider_pos, to);
+                    to += dir; maybe_gen_move_to(color, slider_pos, to);
                 } while(!is_occupied(to));
             };
 
@@ -727,21 +726,12 @@ clock_t ttt[30];
     }
 
     // All king moves - note these are pseudo-moves. Not sure why we don't check for capturable here?
-    void gen_king_moves(int color) {
-        int x = king_pos(color); // King position
-        int z = x<<8;
+    void gen_king_moves(const int color) {
+        const int king_pos = this->king_pos(color); // King position
 
-        // Always 8 direction, unroll loop to avoid branches.
-        if(!(board[x+RT]&color)) push_move_old(z,x+RT);
-        if(!(board[x+FR]&color)) push_move_old(z,x+FR);
-        if(!(board[x+FW]&color)) push_move_old(z,x+FW);
-        if(!(board[x+FL]&color)) push_move_old(z,x+FL);
-        if(!(board[x+LT]&color)) push_move_old(z,x+LT);
-        if(!(board[x+BL]&color)) push_move_old(z,x+BL);
-        if(!(board[x+BW]&color)) push_move_old(z,x+BW);
-        if(!(board[x+BR]&color)) push_move_old(z,x+BR);
-
-        // Mmm, why no check for move-into-check???
+        auto M = [=](int dir) { maybe_gen_move(color, king_pos, dir); };
+        // All 8 directions - we will check legality when making the move.
+        M(RT); M(FR); M(FW); M(FL); M(LT); M(BL); M(BW); M(BR);
     }
 
     // Put pieces that were parked onto pin stack back in lists.
@@ -759,7 +749,6 @@ clock_t ttt[30];
         CheckData check_data;
         int pstack[12], ppos[12], psp=0, first_move=msp;
         int ep_flag = last_move>>MODE_SHIFT&0xFF;
-        //printf("                             check_data.in_check is %d\n", check_data.in_check);
         ep1 = ep2 = msp; Promo = 0;
 
         // Pinned-piece moves and non-constanct check detection.
@@ -956,7 +945,6 @@ minor:
 
         /* update piece location in piece list    */
         index_to_pos[piece-WHITE] = to;
-
 
         /* remove captured piece from piece list  */
         index_to_pos[victim-WHITE] = 0;
