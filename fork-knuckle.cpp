@@ -380,6 +380,20 @@ clock_t ttt[30];
             });                                                         \
     } while(false)  
     
+#   define FOREACH_KNIGHT_OR_KING(color, block) do {                    \
+        const int color__ = (color);                                    \
+        FOREACH_PIECE(king_index(color__), last_knight_index(color__), { \
+                const int knight_or_king_index = piece_index__; const int knight_or_king_pos = piece_pos__; \
+                do block while(false);                                  \
+            });                                                         \
+    } while(false)  
+    
+    // // Iterate through all the knights of the given color.
+    // // @return If the handler fn returns non-0 then we early out with that value, else return 0.
+    // inline int foreach_knight_or_king_value(const int color, const std::function<int(int, int)> piece_handler_fn) {
+    //     return foreach_piece_value(king_index(color), last_knight_index(color), piece_handler_fn);
+    // }
+
 #   define FOREACH_SLIDER(color, block) do {                            \
         const int color__ = (color);                                    \
         FOREACH_PIECE(first_slider_index(color__), last_slider_index(color__), { \
@@ -841,25 +855,20 @@ clock_t ttt[30];
     // Full check for captures on square x by all opponent pieces.
     // Note that color is the color of the capturing piece.
     int capturable(const int color, const int piece_pos) {
-        // Check for pawns - can only be two.
+         // Check for pawns - can only be two.
         int backward = backward_dir(color);
         if(is_pawn(color, piece_pos+backward+RT)) { return 1; }
         if(is_pawn(color, piece_pos+backward+LT)) { return 2; }
 
         // Check knights and opposition king.
-        int piece_capture_value = foreach_knight_or_king_value(color, [=](int taker_index, int taker_pos) {
-                return is_attacking_non_slider(taker_index, taker_pos, piece_pos) ? taker_index + 256 : 0;
+        FOREACH_KNIGHT_OR_KING(color, {
+                if(is_attacking_non_slider(knight_or_king_index, knight_or_king_pos, piece_pos)) { return knight_or_king_index + 256; }
             });
-        if(piece_capture_value) return piece_capture_value;
 
         // Check sliders.
-        // FOREACH_SLIDER(color, {
-        //         if(is_attacking_slider(slider_index, slider_pos, piece_pos)) { return slider_index + 512; }
-        //     });
-        int slider_capture_value = foreach_slider_value(color, [=](int slider_index, int slider_pos) {
-                return is_attacking_slider(slider_index, slider_pos, piece_pos) ? slider_index + 512 : 0;
+        FOREACH_SLIDER(color, {
+                if(is_attacking_slider(slider_index, slider_pos, piece_pos)) { return slider_index + 512; }
             });
-        if(slider_capture_value) return slider_capture_value;
         
         return 0;
     }    
