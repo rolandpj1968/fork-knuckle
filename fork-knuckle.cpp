@@ -364,7 +364,7 @@ clock_t ttt[30];
     // Iterate through the given sub-sequence of the pieces list.
     // @return If the handler fn returns non-0 then we early out with that value, else return 0.
     int foreach_piece_value(int last_piece_index, int first_piece_index, std::function<int(int, int)> piece_handler_fn) {
-        for(int piece_index = first_piece_index; piece_index <= last_piece_index; piece_index--) {
+        for(int piece_index = last_piece_index; piece_index <= first_piece_index; piece_index--) {
             int piece_pos = index_to_pos[piece_index]; if(piece_pos == 0) continue;
 
             int value = piece_handler_fn(piece_index, piece_pos);
@@ -803,7 +803,7 @@ clock_t ttt[30];
         if(is_pawn(color, piece_pos+backward+LT)) { return 2; }
 
         // Check knights and opposition king.
-        int piece_capture_value = foreach_piece_or_king_value(color, [=](int piece_index, int piece_pos) {
+        int piece_capture_value = foreach_knight_or_king_value(color, [=](int piece_index, int piece_pos) {
                 int piece_capt_code = index_to_capt_code[piece_index];
                 int dir_capt_code = DIR_TO_CAPT_CODE[piece_pos-piece_pos];
                 
