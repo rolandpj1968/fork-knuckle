@@ -407,15 +407,15 @@ clock_t ttt[30];
     // @return If the handler fn returns non-0 then we early out with that value, else return 0.
     int foreach_slider_value(int color, std::function<int(int, int)> slider_handler_fn) {
         return foreach_piece_value(first_slider_index(color), last_slider_index(color), slider_handler_fn);
-        for(int slider_index = last_slider_index(color); slider_index >= color_to_first_slider_index[color]; slider_index--) {
-            int slider_pos = index_to_pos[slider_index]; if(slider_pos == 0) continue;
+        // for(int slider_index = last_slider_index(color); slider_index >= color_to_first_slider_index[color]; slider_index--) {
+        //     int slider_pos = index_to_pos[slider_index]; if(slider_pos == 0) continue;
 
-            int value = slider_handler_fn(slider_index, slider_pos);
+        //     int value = slider_handler_fn(slider_index, slider_pos);
 
-            if(value) return value;
-        }
+        //     if(value) return value;
+        // }
 
-        return 0;
+        // return 0;
     }
 
 
@@ -428,9 +428,10 @@ clock_t ttt[30];
     }
 
     // @return true iff the given square is occupied by a piece of either color - guards are considered occupied
-    bool is_occupied(int pos) {
-        return board[pos]&COLOR;
-    }
+    bool is_occupied(int pos) { return board[pos]&COLOR; }
+
+    // @return true iff the given square is empty
+    bool is_empty(int pos) { return board[pos] == DUMMY; }
 
     // Generate one move if to square is available (empty or opponent).
     // @return occupant of target square (for slider loops)
@@ -803,9 +804,7 @@ clock_t ttt[30];
     // Full check for captures on square x by all opponent pieces.
     // Note that color is the color of the capturing piece.
     int capturable(int color, int piece_pos) {
-        int i, k, v, y, m, p;
-
-        /* check for pawns, through 2 squares on board */
+        // Check for pawns - can only be two.
         int backward = backward_dir(color);
         if(is_pawn(color, piece_pos+backward+RT)) { return 1; }
         if(is_pawn(color, piece_pos+backward+LT)) { return 2; }
@@ -815,25 +814,25 @@ clock_t ttt[30];
                 int taker_capt_code = index_to_capt_code[taker_index];
                 int dir_capt_code = DIR_TO_CAPT_CODE[taker_pos - piece_pos];
                 
-                return is_common_capt_code(taker_capt_code, dir_capt_code) ? taker_index+256 : 0;
+                return is_common_capt_code(taker_capt_code, dir_capt_code) ? taker_index + 256 : 0;
             });
         if(piece_capture_value) return piece_capture_value;
 
-        for(int slider_index = last_slider_index(color); slider_index>=color_to_first_slider_index[color]; slider_index--)
-        {
-            k = index_to_pos[slider_index];
-            if(k==0) continue;
-            m = index_to_capt_code[slider_index];
-            i = DIR_TO_CAPT_CODE[k-piece_pos];
-            if(i&m)
-            {
-                int v = delta_vec[k-piece_pos];
-                y = piece_pos;
-                while(board[y+=v]==DUMMY);
-                if(y==k) return p+512;
-            }
-        }
-
+        // Check sliders.
+        int slider_capture_value = foreach_slider_value(color, [=](int slider_index, int slider_pos) {
+                int slider_capt_code = index_to_capt_code[slider_index];
+                int dir_capt_code = DIR_TO_CAPT_CODE[slider_pos - piece_pos];
+                if(is_common_capt_code(slider_capt_code, dir_capt_code)) {
+                    int dir = delta_vec[slider_pos - piece_pos]; // Single square move.
+                    // Baby steps from target piece back towards slider.
+                    int between_pos; for(between_pos = piece_pos + dir; is_empty(between_pos); between_pos += dir) { /*nada*/ }
+                    // Check that first piece we hit was the slider - i.e. no other pieces in between.
+                    if(slider_pos == between_pos) return slider_index + 512;
+                }
+                return 0;
+            });
+        if(slider_capture_value) return slider_capture_value;
+        
         return 0;
     }    
 
