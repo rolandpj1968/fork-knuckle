@@ -372,6 +372,14 @@ clock_t ttt[30];
         } \
     } while(false)
 
+#   define FOREACH_KNIGHT(color, block) do {                            \
+        const int color__ = (color);                                    \
+        FOREACH_PIECE(first_knight_index(color__), last_knight_index(color__), { \
+                const int knight_index = piece_index__; const int knight_pos = piece_pos__; \
+                do block while(false);                                  \
+            });                                                         \
+    } while(false)  
+    
 #   define FOREACH_SLIDER(color, block) do {                            \
         const int color__ = (color);                                    \
         FOREACH_PIECE(first_slider_index(color__), last_slider_index(color__), { \
@@ -435,6 +443,8 @@ clock_t ttt[30];
     inline void foreach_slider(const int color, const std::function<void(int, int)> slider_handler_fn) {
         foreach_piece(first_slider_index(color), last_slider_index(color), slider_handler_fn);
     }
+
+    ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
     // @return Position of the King.
     int king_pos(const int color) const { return index_to_pos[king_index(color)]; }
@@ -512,7 +522,6 @@ clock_t ttt[30];
         // If aiming at King & 1 piece of us in between, park this piece
         //   on pin stack for rest of move generation, after generating its
         //   moves along the pin line.
-        //foreach_slider(other_color(color), [=, &check_data, &psp](int slider_index, int slider_pos) {
         FOREACH_SLIDER(other_color(color), {
                 if(DIR_TO_CAPT_CODE[slider_pos-k]&index_to_capt_code[slider_index]&C_DISTANT)
                 {   /* slider aimed at our king */
@@ -635,14 +644,14 @@ clock_t ttt[30];
         if(is_pawn(color, checker_pos+backward+RT) && index_to_pos[board[checker_pos+backward+RT]-WHITE]) { push_move_old((checker_pos+backward+RT) << 8, checker_pos_with_mode); }
 
         // Knights
-        foreach_knight(color, [=](int knight_index, int knight_pos) {
+        FOREACH_KNIGHT(color, {
                 if(is_attacking_non_slider(knight_index, knight_pos, checker_pos)) {
                     push_move_old(knight_pos<<8, checker_pos);
                 }
             });
 
         // Sliders
-        foreach_slider(color, [=](int slider_index, int slider_pos) {
+        FOREACH_SLIDER(color, {
                 if(is_attacking_slider(slider_index, slider_pos, checker_pos)) {
                     push_move_old(slider_pos<<8, checker_pos);
                 }
@@ -680,36 +689,38 @@ clock_t ttt[30];
     }
 
     // All knight moves.
-    void gen_knight_moves(int color) {
-        foreach_knight(color, [=](int knight_index, int knight_pos) {
-                auto M = [=](int dir) { maybe_gen_move(color, knight_pos, dir); };
+    void gen_knight_moves(const int color) {
+#       define M(dir) maybe_gen_move(color, knight_pos, (dir))
+        FOREACH_KNIGHT(color, {
                 // All 8 knight directions.
                 M(FRR); M(FFR); M(FFL); M(FLL); M(BLL); M(BBL); M(BBR); M(BRR);
             });
+#undef  M
     }
 
     // All slider moves.
-    void gen_slider_moves(int color) {
-        foreach_slider(color, [=](int slider_index, int slider_pos) {
-                int slider_kind = index_to_kind[slider_index];
-                
-                auto MM = [=](int dir) {
-                    int to = slider_pos;
-                    do{
-                        to += dir; maybe_gen_move_to(color, slider_pos, to);
-                    } while(!is_occupied(to));
-                };
-                
+    void gen_slider_moves(const int color) {
+#define M(dir) do { \
+            int to = slider_pos; \
+            do { \
+                to += dir; maybe_gen_move_to(color, slider_pos, to); \
+            } while(!is_occupied(to)); \
+        } while(false)
+            
+        FOREACH_SLIDER(color, {
+                const int slider_kind = index_to_kind[slider_index];
+
                 if(slider_kind != BISHOP_KIND) {
                     // All 4 rook rays for Rook and Queen.
-                    MM(RT); MM(LT); MM(FW); MM(BW);
+                    M(RT); M(LT); M(FW); M(BW);
                 }
                 
                 if(slider_kind != ROOK_KIND) {
                     // All 4 bishop rays for Bishop and Queen.
-                    MM(FL); MM(BR); MM(FR); MM(BL);
+                    M(FL); M(BR); M(FR); M(BL);
                 }
             });
+#undef  M
     }
 
     // Remove moves that don't solve distant check by capturing checker or interposing on check ray.
@@ -751,9 +762,10 @@ clock_t ttt[30];
     void gen_king_moves(const int color) {
         const int king_pos = this->king_pos(color); // King position
 
-        auto M = [=](int dir) { maybe_gen_move(color, king_pos, dir); };
+#       define M(dir) maybe_gen_move(color, king_pos, dir)
         // All 8 directions - we will check legality when making the move.
         M(RT); M(FR); M(FW); M(FL); M(LT); M(BL); M(BW); M(BR);
+#       undef M
     }
 
     // Put pieces that were parked onto pin stack back in lists.
@@ -820,7 +832,7 @@ clock_t ttt[30];
     }
 
     // @return true iff the piece at the given position is a pawn of the given color.
-    bool is_pawn(int color, int piece_pos) {
+    bool is_pawn(const int color, const int piece_pos) const {
         int pawn_mask = color | PAWNS_INDEX;
 
         return (board[piece_pos] & pawn_mask) == pawn_mask;
@@ -828,7 +840,7 @@ clock_t ttt[30];
 
     // Full check for captures on square x by all opponent pieces.
     // Note that color is the color of the capturing piece.
-    int capturable(int color, int piece_pos) {
+    int capturable(const int color, const int piece_pos) {
         // Check for pawns - can only be two.
         int backward = backward_dir(color);
         if(is_pawn(color, piece_pos+backward+RT)) { return 1; }
@@ -841,6 +853,9 @@ clock_t ttt[30];
         if(piece_capture_value) return piece_capture_value;
 
         // Check sliders.
+        // FOREACH_SLIDER(color, {
+        //         if(is_attacking_slider(slider_index, slider_pos, piece_pos)) { return slider_index + 512; }
+        //     });
         int slider_capture_value = foreach_slider_value(color, [=](int slider_index, int slider_pos) {
                 return is_attacking_slider(slider_index, slider_pos, piece_pos) ? slider_index + 512 : 0;
             });
