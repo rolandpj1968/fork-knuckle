@@ -423,10 +423,10 @@ clock_t ttt[30];
     }
 
     // @return true iff the given square is occupied by a piece of either color - guards are considered occupied
-    bool is_occupied(int pos) { return board[pos]&COLOR; }
+    bool is_occupied(const int pos) const { return board[pos]&COLOR; }
 
     // @return true iff the given square is empty
-    bool is_empty(int pos) { return board[pos] == DUMMY; }
+    bool is_empty(const int pos) const { return board[pos] == DUMMY; }
 
     // For sliders this is not a strong enough check to ensure the piece can get through to
     //   the target position - we still have to check that no other pieces are sitting in-between.
@@ -438,6 +438,21 @@ clock_t ttt[30];
         return is_common_capt_code(piece_capt_code, dir_capt_code);
     }
 
+    // @return true iff the given non-slider piece is attacking (or defending) the target position.
+    bool is_attacking_non_slider(const int piece_index, const int piece_pos, const int target_pos) const { return is_attacking_weak(piece_index, piece_pos, target_pos); }
+
+    // @return true iff the given slider piece is attacking (or defending) the target position.
+    bool is_attacking_slider(const int slider_index, const int slider_pos, const int target_pos) const {
+        if(is_attacking_weak(slider_index, slider_pos, target_pos)) {
+            int dir = delta_vec[slider_pos - target_pos]; // Single square move.
+            // Baby steps from target piece back towards slider.
+            int between_pos; for(between_pos = target_pos + dir; is_empty(between_pos); between_pos += dir) { /*nada*/ }
+            // Check that first piece we hit was the slider - i.e. no other pieces in between.
+            if(slider_pos == between_pos) { return true; }
+        }
+        return false;
+    }
+    
     // Generate one move if to square is available (empty or opponent).
     // @return occupant of target square (for slider loops)
     void gen_move_to(int color, int from_pos, int to) {
@@ -577,46 +592,36 @@ clock_t ttt[30];
 
     // @return promotion rank for the given color - 2nd for black and 7th for white.
     static int promo_rank(const int color) { return 0xD0 - 5*(color>>1); }
+
+    // @return true iff the given positions have the same rank
+    static bool is_same_rank(int pos1, int pos2) { return !((pos1^pos2)&0xF0); }
+    
+    // @return promotion rank for the given color - 2nd for black and 7th for white.
+    static bool is_promo_rank(const int color, int pos) { return is_same_rank(promo_rank(color), pos); }
     
     // On contact check only King retreat or capture helps.
     // Use in that case specialized recapture generator.
     void gen_piece_moves_in_contact_check(int color, int checker_pos) {
-        int forward = forward_dir(color);            // forward step
-        //int prank = 0xD0 - 5*(color>>1);    // 2nd/7th rank
+        // Check for pawns - can only be 2.
+        int backward = backward_dir(color);
+        int checker_pos_with_mode = checker_pos;
+        if(is_promo_rank(color, checker_pos + backward)) Promo++,checker_pos_with_mode |= PROMO_SHIFTED; // Bug - promo should only ++ if this finds a move, and possible ++ twice, once for each pawn
 
-        // // Check for pawns - can only be 2.
-        // int backward = backward_dir(color);
-        // int checker_pos_backwards = checker_pos + backward;
-        // int checker_pos_with_mode = checker_pos;
-        // if(!((prank^checker_pos_backwards)&0xF0)) Promo++,checker_pos_with_mode |= PROMO_SHIFTED; // Bug - promo should only ++ if this finds a move, and possible ++ twice, once for each pawn
-
-        // if(is_pawn(checker_pos+backward+RT)) { push_move_old((checker_pos+backward+RT) << 8, checker_pos); }
-
-        int m = color | PAWNS_INDEX; // is this index?
-        int z; int x; z = x = checker_pos;
-        int y = x - forward;
-        
-        if(!((promo_rank(color)^y)&0xF0)) Promo++,z |= PROMO_SHIFTED;
-        if((board[y+RT]&m)==m && index_to_pos[board[y+RT]-WHITE]) push_move_old((y+RT)<<8,z);
-        if((board[y+LT]&m)==m && index_to_pos[board[y+LT]-WHITE]) push_move_old((y+LT)<<8,z);
+        // I have no idea what the extra second condition is here - it looks trivially true, but empirically is required.
+        if(is_pawn(color, checker_pos+backward+LT) && index_to_pos[board[checker_pos+backward+LT]-WHITE]) { push_move_old((checker_pos+backward+LT) << 8, checker_pos_with_mode); }
+        if(is_pawn(color, checker_pos+backward+RT) && index_to_pos[board[checker_pos+backward+RT]-WHITE]) { push_move_old((checker_pos+backward+RT) << 8, checker_pos_with_mode); }
 
         // Knights
         foreach_knight(color, [=](int knight_index, int knight_pos) {
-                if(is_attacking_weak(knight_index, knight_pos, checker_pos)) {
+                if(is_attacking_non_slider(knight_index, knight_pos, checker_pos)) {
                     push_move_old(knight_pos<<8, checker_pos);
                 }
             });
 
         // Sliders
         foreach_slider(color, [=](int slider_index, int slider_pos) {
-                if(is_attacking_weak(slider_index, slider_pos, checker_pos)) {
-                    int dir = delta_vec[slider_pos - checker_pos]; // Single square move.
-                    // Baby steps from target piece back towards slider.
-                    int between_pos; for(between_pos = checker_pos + dir; is_empty(between_pos); between_pos += dir) { /*nada*/ }
-                    // Check that first piece we hit was the slider - i.e. no other pieces in between.
-                    if(slider_pos == between_pos) {
-                        push_move_old(slider_pos<<8, checker_pos);
-                    }
+                if(is_attacking_slider(slider_index, slider_pos, checker_pos)) {
+                    push_move_old(slider_pos<<8, checker_pos);
                 }
             });
     }
@@ -820,25 +825,27 @@ clock_t ttt[30];
 
         // Check knights and opposition king.
         int piece_capture_value = foreach_knight_or_king_value(color, [=](int taker_index, int taker_pos) {
-                int taker_capt_code = index_to_capt_code[taker_index];
-                int dir_capt_code = DIR_TO_CAPT_CODE[taker_pos - piece_pos];
+                return is_attacking_non_slider(taker_index, taker_pos, piece_pos) ? taker_index + 256 : 0;
+                // int taker_capt_code = index_to_capt_code[taker_index];
+                // int dir_capt_code = DIR_TO_CAPT_CODE[taker_pos - piece_pos];
                 
-                return is_common_capt_code(taker_capt_code, dir_capt_code) ? taker_index + 256 : 0;
+                // return is_common_capt_code(taker_capt_code, dir_capt_code) ? taker_index + 256 : 0;
             });
         if(piece_capture_value) return piece_capture_value;
 
         // Check sliders.
         int slider_capture_value = foreach_slider_value(color, [=](int slider_index, int slider_pos) {
-                int slider_capt_code = index_to_capt_code[slider_index];
-                int dir_capt_code = DIR_TO_CAPT_CODE[slider_pos - piece_pos];
-                if(is_common_capt_code(slider_capt_code, dir_capt_code)) {
-                    int dir = delta_vec[slider_pos - piece_pos]; // Single square move.
-                    // Baby steps from target piece back towards slider.
-                    int between_pos; for(between_pos = piece_pos + dir; is_empty(between_pos); between_pos += dir) { /*nada*/ }
-                    // Check that first piece we hit was the slider - i.e. no other pieces in between.
-                    if(slider_pos == between_pos) return slider_index + 512;
-                }
-                return 0;
+                return is_attacking_slider(slider_index, slider_pos, piece_pos) ? slider_index + 512 : 0;
+                // int slider_capt_code = index_to_capt_code[slider_index];
+                // int dir_capt_code = DIR_TO_CAPT_CODE[slider_pos - piece_pos];
+                // if(is_common_capt_code(slider_capt_code, dir_capt_code)) {
+                //     int dir = delta_vec[slider_pos - piece_pos]; // Single square move.
+                //     // Baby steps from target piece back towards slider.
+                //     int between_pos; for(between_pos = piece_pos + dir; is_empty(between_pos); between_pos += dir) { /*nada*/ }
+                //     // Check that first piece we hit was the slider - i.e. no other pieces in between.
+                //     if(slider_pos == between_pos) return slider_index + 512;
+                // }
+                // return 0;
             });
         if(slider_capture_value) return slider_capture_value;
         
