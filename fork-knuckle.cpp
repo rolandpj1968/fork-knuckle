@@ -349,7 +349,10 @@ clock_t ttt[30];
     // @return Piece index of the King.
     int king_index(int color) { return base_index(color) + KING_INDEX; }
 
-    // @return Piece index of the last knight - we typically iterate through them backwards.
+    // @return Piece index of the first knight.
+    int first_knight_index(int color) { return king_index(color) + 1; }
+    
+    // @return Piece index of the last knight.
     int last_knight_index(int color) { return LastKnightIndex[color]; }
     
     // @return Piece index of the last slider - we typically iterate through them backwards.
@@ -360,11 +363,11 @@ clock_t ttt[30];
 
     // Iterate through the given sub-sequence of the pieces list.
     // @return If the handler fn returns non-0 then we early out with that value, else return 0.
-    int foreach_piece_value(int color, std::function<int(int, int)> knight_handler_fn) {
-        for(int knight_index = last_knight_index(color); knight_index >= king_index(color); knight_index--) {
-            int knight_pos = index_to_pos[knight_index]; if(knight_pos == 0) continue;
+    int foreach_piece_value(int last_piece_index, int first_piece_index, std::function<int(int, int)> piece_handler_fn) {
+        for(int piece_index = first_piece_index; piece_index <= last_piece_index; piece_index--) {
+            int piece_pos = index_to_pos[piece_index]; if(piece_pos == 0) continue;
 
-            int value = knight_handler_fn(knight_index, knight_pos);
+            int value = piece_handler_fn(piece_index, piece_pos);
 
             if(value) return value;
         }
@@ -375,16 +378,14 @@ clock_t ttt[30];
     
     // Iterate through all the knights of the given color.
     // @return If the handler fn returns non-0 then we early out with that value, else return 0.
+    int foreach_knight_or_king_value(int color, std::function<int(int, int)> piece_handler_fn) {
+        return foreach_piece_value(last_knight_index(color), king_index(color), piece_handler_fn);
+    }
+
+        // Iterate through all the knights of the given color.
+    // @return If the handler fn returns non-0 then we early out with that value, else return 0.
     int foreach_knight_value(int color, std::function<int(int, int)> knight_handler_fn) {
-        for(int knight_index = last_knight_index(color); knight_index >= king_index(color); knight_index--) {
-            int knight_pos = index_to_pos[knight_index]; if(knight_pos == 0) continue;
-
-            int value = knight_handler_fn(knight_index, knight_pos);
-
-            if(value) return value;
-        }
-
-        return 0;
+        return foreach_piece_value(last_knight_index(color), first_knight_index(color), knight_handler_fn);
     }
     
     // Iterate through all the knights of the given color.
@@ -801,13 +802,14 @@ clock_t ttt[30];
         if(is_pawn(color, piece_pos+backward+RT)) { return 1; }
         if(is_pawn(color, piece_pos+backward+LT)) { return 2; }
 
-        int knight_capture_value = foreach_knight_value(color, [=](int knight_index, int knight_pos) {
-                int knight_capt_code = index_to_capt_code[knight_index];
-                int dir_capt_code = DIR_TO_CAPT_CODE[knight_pos-piece_pos];
-                               
-                return is_common_capt_code(knight_capt_code, dir_capt_code) ? knight_index+256 : 0;
+        // Check knights and opposition king.
+        int piece_capture_value = foreach_piece_or_king_value(color, [=](int piece_index, int piece_pos) {
+                int piece_capt_code = index_to_capt_code[piece_index];
+                int dir_capt_code = DIR_TO_CAPT_CODE[piece_pos-piece_pos];
+                
+                return is_common_capt_code(piece_capt_code, dir_capt_code) ? piece_index+256 : 0;
             });
-        if(knight_capture_value) return knight_capture_value;
+        if(piece_capture_value) return piece_capture_value;
 
         for(int slider_index = last_slider_index(color); slider_index>=FirstSlider[color]; slider_index--)
         {
