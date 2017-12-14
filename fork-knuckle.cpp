@@ -362,7 +362,7 @@ clock_t ttt[30];
     int last_slider_index(int color) { return base_index(color) + LAST_SLIDER_INDEX; }
     
     // @return true iff the two capture codes have at least one common flag.
-    bool is_common_capt_code(int capt_code_1, int capt_code_2) { return capt_code_1 & capt_code_2; }
+    static bool is_common_capt_code(const int capt_code_1, const int capt_code_2) { return capt_code_1 & capt_code_2; }
 
     // Iterate through the given sub-sequence of the pieces list.
     // @return If the handler fn returns non-0 then we early out with that value, else return 0.
@@ -427,6 +427,16 @@ clock_t ttt[30];
 
     // @return true iff the given square is empty
     bool is_empty(int pos) { return board[pos] == DUMMY; }
+
+    // For sliders this is not a strong enough check to ensure the piece can get through to
+    //   the target position - we still have to check that no other pieces are sitting in-between.
+    // @return true iff the given piece is attacking/defending the target position,
+    //                including slider pieces with another piece in between.
+    bool is_attacking_weak(const int piece_index, const int piece_pos, const int target_pos) const {
+        int piece_capt_code = index_to_capt_code[piece_index];
+        int dir_capt_code = DIR_TO_CAPT_CODE[piece_pos - target_pos];
+        return is_common_capt_code(piece_capt_code, dir_capt_code);
+    }
 
     // Generate one move if to square is available (empty or opponent).
     // @return occupant of target square (for slider loops)
@@ -565,35 +575,41 @@ clock_t ttt[30];
         if((board[x]&mask)==mask) push_move_old(x<<8,(ep_flag^0x10)|EP_SHIFTED);
     }
 
+    // @return promotion rank for the given color - 2nd for black and 7th for white.
+    static int promo_rank(const int color) { return 0xD0 - 5*(color>>1); }
+    
     // On contact check only King retreat or capture helps.
     // Use in that case specialized recapture generator.
     void gen_piece_moves_in_contact_check(int color, int checker_pos) {
         int forward = forward_dir(color);            // forward step
-        int prank = 0xD0 - 5*(color>>1);    // 2nd/7th rank
+        //int prank = 0xD0 - 5*(color>>1);    // 2nd/7th rank
 
-        // check for pawns, through 2 squares on board.
+        // // Check for pawns - can only be 2.
+        // int backward = backward_dir(color);
+        // int checker_pos_backwards = checker_pos + backward;
+        // int checker_pos_with_mode = checker_pos;
+        // if(!((prank^checker_pos_backwards)&0xF0)) Promo++,checker_pos_with_mode |= PROMO_SHIFTED; // Bug - promo should only ++ if this finds a move, and possible ++ twice, once for each pawn
+
+        // if(is_pawn(checker_pos+backward+RT)) { push_move_old((checker_pos+backward+RT) << 8, checker_pos); }
+
         int m = color | PAWNS_INDEX; // is this index?
         int z; int x; z = x = checker_pos;
         int y = x - forward;
         
-        if(!((prank^y)&0xF0)) Promo++,z |= PROMO_SHIFTED;
+        if(!((promo_rank(color)^y)&0xF0)) Promo++,z |= PROMO_SHIFTED;
         if((board[y+RT]&m)==m && index_to_pos[board[y+RT]-WHITE]) push_move_old((y+RT)<<8,z);
         if((board[y+LT]&m)==m && index_to_pos[board[y+LT]-WHITE]) push_move_old((y+LT)<<8,z);
 
         // Knights
         foreach_knight(color, [=](int knight_index, int knight_pos) {
-                int knight_capt_code = index_to_capt_code[knight_index];
-                int dir_capt_code = DIR_TO_CAPT_CODE[knight_pos - checker_pos];
-                if(is_common_capt_code(knight_capt_code, dir_capt_code)) {
+                if(is_attacking_weak(knight_index, knight_pos, checker_pos)) {
                     push_move_old(knight_pos<<8, checker_pos);
                 }
             });
 
         // Sliders
         foreach_slider(color, [=](int slider_index, int slider_pos) {
-                int slider_capt_code = index_to_capt_code[slider_index];
-                int dir_capt_code = DIR_TO_CAPT_CODE[slider_pos - checker_pos];
-                if(is_common_capt_code(slider_capt_code, dir_capt_code)) {
+                if(is_attacking_weak(slider_index, slider_pos, checker_pos)) {
                     int dir = delta_vec[slider_pos - checker_pos]; // Single square move.
                     // Baby steps from target piece back towards slider.
                     int between_pos; for(between_pos = checker_pos + dir; is_empty(between_pos); between_pos += dir) { /*nada*/ }
@@ -603,21 +619,6 @@ clock_t ttt[30];
                     }
                 }
             });
-        
-        // for(int p=color-WHITE+FL; p>=color_to_first_slider_index[color]; p--)
-        // {
-        //     int k = index_to_pos[p];
-        //     if(k==0) continue;
-        //     int m = index_to_capt_code[p];
-        //     int i = DIR_TO_CAPT_CODE[k-x];
-        //     if(i&m)
-        //     {
-        //         int v = delta_vec[k-x];
-        //         y = x;
-        //         while(board[y+=v]==DUMMY);
-        //         if(y==k) push_move_old(k<<8,x);
-        //     }
-        // }
     }
 
     // All pawn moves.
