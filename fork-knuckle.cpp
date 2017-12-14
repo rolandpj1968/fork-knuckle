@@ -409,6 +409,10 @@ clock_t ttt[30];
         return foreach_piece_value(first_slider_index(color), last_slider_index(color), slider_handler_fn);
     }
 
+    // Iterate through all the sliders of the given color.
+    void foreach_slider(int color, std::function<void(int, int)> slider_handler_fn) {
+        foreach_piece(first_slider_index(color), last_slider_index(color), slider_handler_fn);
+    }
 
     // @return Position of the King.
     int king_pos(int color) { return index_to_pos[king_index(color)]; }
@@ -586,20 +590,34 @@ clock_t ttt[30];
             });
 
         // Sliders
-        for(int p=color-WHITE+FL; p>=color_to_first_slider_index[color]; p--)
-        {
-            int k = index_to_pos[p];
-            if(k==0) continue;
-            int m = index_to_capt_code[p];
-            int i = DIR_TO_CAPT_CODE[k-x];
-            if(i&m)
-            {
-                int v = delta_vec[k-x];
-                y = x;
-                while(board[y+=v]==DUMMY);
-                if(y==k) push_move_old(k<<8,x);
-            }
-        }
+        foreach_slider(color, [=](int slider_index, int slider_pos) {
+                int slider_capt_code = index_to_capt_code[slider_index];
+                int dir_capt_code = DIR_TO_CAPT_CODE[slider_pos - checker_pos];
+                if(is_common_capt_code(slider_capt_code, dir_capt_code)) {
+                    int dir = delta_vec[slider_pos - checker_pos]; // Single square move.
+                    // Baby steps from target piece back towards slider.
+                    int between_pos; for(between_pos = checker_pos + dir; is_empty(between_pos); between_pos += dir) { /*nada*/ }
+                    // Check that first piece we hit was the slider - i.e. no other pieces in between.
+                    if(slider_pos == between_pos) {
+                        push_move_old(slider_pos<<8, checker_pos);
+                    }
+                }
+            });
+        
+        // for(int p=color-WHITE+FL; p>=color_to_first_slider_index[color]; p--)
+        // {
+        //     int k = index_to_pos[p];
+        //     if(k==0) continue;
+        //     int m = index_to_capt_code[p];
+        //     int i = DIR_TO_CAPT_CODE[k-x];
+        //     if(i&m)
+        //     {
+        //         int v = delta_vec[k-x];
+        //         y = x;
+        //         while(board[y+=v]==DUMMY);
+        //         if(y==k) push_move_old(k<<8,x);
+        //     }
+        // }
     }
 
     // All pawn moves.
