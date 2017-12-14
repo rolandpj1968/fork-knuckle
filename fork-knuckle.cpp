@@ -363,8 +363,8 @@ clock_t ttt[30];
 
     // Iterate through the given sub-sequence of the pieces list.
     // @return If the handler fn returns non-0 then we early out with that value, else return 0.
-    int foreach_piece_value(int last_piece_index, int first_piece_index, std::function<int(int, int)> piece_handler_fn) {
-        for(int piece_index = last_piece_index; piece_index >= first_piece_index; piece_index--) {
+    int foreach_piece_value(const int first_piece_index, const int last_piece_index, std::function<int(int, int)> piece_handler_fn) {
+        for(int piece_index = first_piece_index; piece_index <= last_piece_index; piece_index++) {
             int piece_pos = index_to_pos[piece_index]; if(piece_pos == 0) continue;
 
             int value = piece_handler_fn(piece_index, piece_pos);
@@ -379,13 +379,13 @@ clock_t ttt[30];
     // Iterate through all the knights of the given color.
     // @return If the handler fn returns non-0 then we early out with that value, else return 0.
     int foreach_knight_or_king_value(int color, std::function<int(int, int)> piece_handler_fn) {
-        return foreach_piece_value(last_knight_index(color), king_index(color), piece_handler_fn);
+        return foreach_piece_value(king_index(color), last_knight_index(color), piece_handler_fn);
     }
 
         // Iterate through all the knights of the given color.
     // @return If the handler fn returns non-0 then we early out with that value, else return 0.
     int foreach_knight_value(int color, std::function<int(int, int)> knight_handler_fn) {
-        return foreach_piece_value(last_knight_index(color), first_knight_index(color), knight_handler_fn);
+        return foreach_piece_value(first_knight_index(color), last_knight_index(color), knight_handler_fn);
     }
     
     // Iterate through all the knights of the given color.
