@@ -190,13 +190,13 @@ clock_t ttt[30];
             int v = KING_ROSE[i];
             int x = index_to_pos[king_index(color)] + v;
             int piece = board[x];
-            if((piece & COLOR) == (color^COLOR)) {
+            if((piece & COLOR) == other_color(color)) {
                 if(index_to_capt_code[piece-WHITE] & DIR_TO_CAPT_CODE[-v]) return x;
             }
             v = KNIGHT_ROSE[i];
             x = index_to_pos[king_index(color)] + v;
             piece = board[x];
-            if((piece & COLOR) == (color^COLOR)) {
+            if((piece & COLOR) == other_color(color)) {
                 if(index_to_capt_code[piece-WHITE] & DIR_TO_CAPT_CODE[-v]) return x;
             }
         }
@@ -344,29 +344,51 @@ clock_t ttt[30];
     int mk_move(int from_pos, int to_pos, int mode) { return (mode << MODE_SHIFT) | (from_pos << FROM_SHIFT) | to_pos; }
 
     // @return Base index for the color.
-    int base_index(int color) { return color-WHITE; }
+    static int base_index(const int color) { return color-WHITE; }
     
     // @return Piece index of the King.
-    int king_index(int color) { return base_index(color) + KING_INDEX; }
+    static int king_index(const int color) { return base_index(color) + KING_INDEX; }
 
     // @return Piece index of the first knight.
-    int first_knight_index(int color) { return king_index(color) + 1; }
+    static int first_knight_index(const int color) { return king_index(color) + 1; }
     
     // @return Piece index of the last knight.
-    int last_knight_index(int color) { return color_to_last_knight_index[color]; }
+    int last_knight_index(const int color) const { return color_to_last_knight_index[color]; }
 
     // @return Piece index of the first slider.
-    int first_slider_index(int color) { return color_to_first_slider_index[color]; }
+    int first_slider_index(const int color) const { return color_to_first_slider_index[color]; }
 
     // @return Piece index of the last slider.
-    int last_slider_index(int color) { return base_index(color) + LAST_SLIDER_INDEX; }
+    static int last_slider_index(const int color) { return base_index(color) + LAST_SLIDER_INDEX; }
     
     // @return true iff the two capture codes have at least one common flag.
     static bool is_common_capt_code(const int capt_code_1, const int capt_code_2) { return capt_code_1 & capt_code_2; }
 
+#   define FOREACH_PIECE(first_piece_index, last_piece_index, block) do { \
+        const int first_piece_index__ = (first_piece_index), last_piece_index__ = (last_piece_index); \
+        for(int piece_index__ = first_piece_index__; piece_index__ <= last_piece_index__; piece_index__++) { \
+            const int piece_pos__ = index_to_pos[piece_index__]; if(piece_pos__ == 0) continue; \
+            do block while(false); \
+        } \
+    } while(false)
+
+#   define FOREACH_SLIDER(color, block) do {                            \
+        const int color__ = (color);                                    \
+        FOREACH_PIECE(first_slider_index(color__), last_slider_index(color__), { \
+                const int slider_index = piece_index__; const int slider_pos = piece_pos__; \
+                do block while(false);                                  \
+            });                                                         \
+    } while(false)  
+    
+    //////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    //
+    // Implementing foreach with lambdas is pretty, but doesn't compile very well - much slower than inline code.
+    //
+    //////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    
     // Iterate through the given sub-sequence of the pieces list.
     // @return If the handler fn returns non-0 then we early out with that value, else return 0.
-    int foreach_piece_value(const int first_piece_index, const int last_piece_index, std::function<int(int, int)> piece_handler_fn) {
+    inline int foreach_piece_value(const int first_piece_index, const int last_piece_index, const std::function<int(int, int)> piece_handler_fn) {
         for(int piece_index = first_piece_index; piece_index <= last_piece_index; piece_index++) {
             int piece_pos = index_to_pos[piece_index]; if(piece_pos == 0) continue;
 
@@ -379,7 +401,7 @@ clock_t ttt[30];
     }
 
     // Iterate through the given sub-sequence of the pieces list.
-    void foreach_piece(const int first_piece_index, const int last_piece_index, std::function<void(int, int)> piece_handler_fn) {
+    inline void foreach_piece(const int first_piece_index, const int last_piece_index, const std::function<void(int, int)> piece_handler_fn) {
         foreach_piece_value(first_piece_index, last_piece_index, [=](int piece_index, int piece_pos) {
                 piece_handler_fn(piece_index, piece_pos);
                 return 0; // No early out
@@ -388,34 +410,34 @@ clock_t ttt[30];
     
     // Iterate through all the knights of the given color.
     // @return If the handler fn returns non-0 then we early out with that value, else return 0.
-    int foreach_knight_or_king_value(int color, std::function<int(int, int)> piece_handler_fn) {
+    inline int foreach_knight_or_king_value(const int color, const std::function<int(int, int)> piece_handler_fn) {
         return foreach_piece_value(king_index(color), last_knight_index(color), piece_handler_fn);
     }
 
-        // Iterate through all the knights of the given color.
+    // Iterate through all the knights of the given color.
     // @return If the handler fn returns non-0 then we early out with that value, else return 0.
-    int foreach_knight_value(int color, std::function<int(int, int)> knight_handler_fn) {
+    inline int foreach_knight_value(const int color, const std::function<int(int, int)> knight_handler_fn) {
         return foreach_piece_value(first_knight_index(color), last_knight_index(color), knight_handler_fn);
     }
     
     // Iterate through all the knights of the given color.
-    void foreach_knight(int color, std::function<void(int, int)> knight_handler_fn) {
+    inline void foreach_knight(const int color, const std::function<void(int, int)> knight_handler_fn) {
         foreach_piece(first_knight_index(color), last_knight_index(color), knight_handler_fn);
     }
 
     // Iterate through all the knights of the given color.
     // @return If the handler fn returns non-0 then we early out with that value, else return 0.
-    int foreach_slider_value(int color, std::function<int(int, int)> slider_handler_fn) {
+    inline int foreach_slider_value(const int color, const std::function<int(int, int)> slider_handler_fn) {
         return foreach_piece_value(first_slider_index(color), last_slider_index(color), slider_handler_fn);
     }
 
     // Iterate through all the sliders of the given color.
-    void foreach_slider(int color, std::function<void(int, int)> slider_handler_fn) {
+    inline void foreach_slider(const int color, const std::function<void(int, int)> slider_handler_fn) {
         foreach_piece(first_slider_index(color), last_slider_index(color), slider_handler_fn);
     }
 
     // @return Position of the King.
-    int king_pos(int color) { return index_to_pos[king_index(color)]; }
+    int king_pos(const int color) const { return index_to_pos[king_index(color)]; }
 
     // @return true iff the given square is occupied by a piece of either color - guards are considered occupied
     bool is_occupied(const int pos) const { return board[pos]&COLOR; }
@@ -467,11 +489,15 @@ clock_t ttt[30];
     }
 
     // Forward direction for this color - just a handy trick to get FW/BW, i.e. +/- 0x10.
-    int forward_dir(int color) { return 0x30 - color; }
+    static int forward_dir(const int color) { return 0x30 - color; }
 
     // Backward direction for this color.
-    int backward_dir(int color) { return -forward_dir(color); }
+    static int backward_dir(const int color) { return -forward_dir(color); }
 
+    // @return the opposite color.
+    static int other_color(const int color) { return COLOR ^ color; }
+    
+    
     // All pinned pieces are removed from lists.
     // All their remaining legal moves are generated.
     // All distant checks are detected.
@@ -486,82 +512,79 @@ clock_t ttt[30];
         // If aiming at King & 1 piece of us in between, park this piece
         //   on pin stack for rest of move generation, after generating its
         //   moves along the pin line.
-        for(int p=color_to_first_slider_index[COLOR-color]; p<COLOR-WHITE+FW-color; p++)
-        {   /* run through enemy slider list */
-            int j = index_to_pos[p]; // enemy slider
-            if(j==0) continue;  /* currently captured */
-            if(DIR_TO_CAPT_CODE[j-k]&index_to_capt_code[p]&C_DISTANT)
-            {   /* slider aimed at our king */
-                int v = delta_vec[j-k];
-                int x = k;     /* trace ray from our King */
-                int m; while((m=board[x+=v]) == DUMMY);
-                if(x==j) {
-                    // Distant check detected
-                    check_data.add_distant_check(j, v);
-                } else
-                if(m&color)
-                {   /* first on ray from King is ours */
-                    int y = x;
-                    while(board[y+=v] == DUMMY);
-                    if(y==j)
-                    {   /* our piece at x is pinned!  */
-                        /* remove from piece list     */
-                        /* and put on pin stack       */
-                        m -= WHITE;
-                        ppos[psp] = index_to_pos[m];
-                        index_to_pos[m] = 0;
-                        pstack[psp++] = m;
-                        int z = x<<8;
-
-                        if(index_to_kind[m]<3)
-                        {   /* flag promotions */
-                            if(!((prank^x)&0xF0)) z |= PROMO_SHIFTED;
-                            y = x + forward; 
-                            if(!(v&7)) /* Pawn along file */
-                            {   /* generate non-captures  */
-                                if(!(board[y]&COLOR))
-                                {   push_move_old(z,y);
-                                    y += forward;Promo++;
-                                    if(!((board[y]&COLOR) | ((rank^y)&0xF0)))
-                                        push_move_old(z,y|y<<MODE_SHIFT);
-                                }
-                            } else
-                            {   /* diagonal pin       */
-                                /* try capture pinner */
-                                if(y+RT==j) { Promo++; push_move_old(z,y+RT); }
-                                if(y+LT==j) { Promo++; push_move_old(z,y+LT); }
-                            }
-                        } else
-                        if(index_to_capt_code[m]&DIR_TO_CAPT_CODE[j-k]&C_DISTANT)
-                        {   /* slider moves along pin ray */
-                            y = x;
-                            do{ /* moves upto capt. pinner*/
-                                y += v;
-                                push_move_old(z,y);
-                            } while(y != j);
-                            y = x;
-                            while((y-=v) != k)
-                            {   /* moves towards King     */
-                                push_move_old(z,y);
+        //foreach_slider(other_color(color), [=, &check_data, &psp](int slider_index, int slider_pos) {
+        FOREACH_SLIDER(other_color(color), {
+                if(DIR_TO_CAPT_CODE[slider_pos-k]&index_to_capt_code[slider_index]&C_DISTANT)
+                {   /* slider aimed at our king */
+                    int v = delta_vec[slider_pos-k];
+                    int x = k;     /* trace ray from our King */
+                    int m; while((m=board[x+=v]) == DUMMY);
+                    if(x==slider_pos) {
+                        // Distant check detected
+                        check_data.add_distant_check(slider_pos, v);
+                    } else
+                        if(m&color)
+                        {   /* first on ray from King is ours */
+                            int y = x;
+                            while(board[y+=v] == DUMMY);
+                            if(y==slider_pos)
+                            {   /* our piece at x is pinned!  */
+                                /* remove from piece list     */
+                                /* and put on pin stack       */
+                                m -= WHITE;
+                                ppos[psp] = index_to_pos[m];
+                                index_to_pos[m] = 0;
+                                pstack[psp++] = m;
+                                int z = x<<8;
+                                
+                                if(index_to_kind[m]<3)
+                                {   /* flag promotions */
+                                    if(!((prank^x)&0xF0)) z |= PROMO_SHIFTED;
+                                    y = x + forward; 
+                                    if(!(v&7)) /* Pawn along file */
+                                    {   /* generate non-captures  */
+                                        if(!(board[y]&COLOR))
+                                        {   push_move_old(z,y);
+                                            y += forward;Promo++;
+                                            if(!((board[y]&COLOR) | ((rank^y)&0xF0)))
+                                                push_move_old(z,y|y<<MODE_SHIFT);
+                                        }
+                                    } else
+                                    {   /* diagonal pin       */
+                                        /* try capture pinner */
+                                        if(y+RT==slider_pos) { Promo++; push_move_old(z,y+RT); }
+                                        if(y+LT==slider_pos) { Promo++; push_move_old(z,y+LT); }
+                                    }
+                                } else
+                                    if(index_to_capt_code[m]&DIR_TO_CAPT_CODE[slider_pos-k]&C_DISTANT)
+                                    {   /* slider moves along pin ray */
+                                        y = x;
+                                        do{ /* moves upto capt. pinner*/
+                                            y += v;
+                                            push_move_old(z,y);
+                                        } while(y != slider_pos);
+                                        y = x;
+                                        while((y-=v) != k)
+                                        {   /* moves towards King     */
+                                            push_move_old(z,y);
+                                        }
+                                    }
                             }
                         }
-                    }
                 }
-            }
-        }
-
+            });
         // All pinned pieces are now removed from lists.
         // All their remaining legal moves are generated.
         // All distant checks are detected.
     }
 
-    // Determine if there is a contact check (there can only be one).
+    // Determine if there is a contact check - there can only be one and it must be the last piece moved.
     void get_contact_check(int color, int last_move, CheckData& check_data) {
         int king_pos = this->king_pos(color);
-        int y = last_move&0xFF;
+        int last_to = last_move & 0xFF;
 
-        if(DIR_TO_CAPT_CODE[king_pos-y] & index_to_capt_code[board[y]-WHITE] & C_CONTACT) {
-            check_data.add_contact_check(y, delta_vec[y-king_pos]);
+        if(DIR_TO_CAPT_CODE[king_pos - last_to] & index_to_capt_code[board[last_to]-WHITE] & C_CONTACT) {
+            check_data.add_contact_check(last_to, delta_vec[last_to - king_pos]);
         }
     }
 
@@ -628,7 +651,7 @@ clock_t ttt[30];
 
     // All pawn moves.
     void gen_pawn_moves(int color) {
-        int forward = forward_dir(color);            // forward step
+        int forward = forward_dir(color);   // forward step
         int rank = 0x58 - (forward>>1);     // 4th/5th rank
         int prank = 0xD0 - 5*(color>>1);    // 2nd/7th rank
         int mask = color|0x80;              // own color, empty square, or guard
@@ -667,27 +690,26 @@ clock_t ttt[30];
 
     // All slider moves.
     void gen_slider_moves(int color) {
-        for(int slider_index = last_slider_index(color); slider_index>=color_to_first_slider_index[color]; slider_index--) {   
-            int slider_pos = index_to_pos[slider_index]; if(slider_pos==0) continue;
-            int slider_kind = index_to_kind[slider_index];
-
-            auto MM = [=](int dir) {
-                int to = slider_pos;
-                do{
-                    to += dir; maybe_gen_move_to(color, slider_pos, to);
-                } while(!is_occupied(to));
-            };
-
-            if(slider_kind != BISHOP_KIND) {
-                // All 4 rook rays for Rook and Queen.
-                MM(RT); MM(LT); MM(FW); MM(BW);
-            }
-            
-            if(slider_kind != ROOK_KIND) {
-                // All 4 bishop rays for Bishop and Queen.
-                MM(FL); MM(BR); MM(FR); MM(BL);
-            }
-        }
+        foreach_slider(color, [=](int slider_index, int slider_pos) {
+                int slider_kind = index_to_kind[slider_index];
+                
+                auto MM = [=](int dir) {
+                    int to = slider_pos;
+                    do{
+                        to += dir; maybe_gen_move_to(color, slider_pos, to);
+                    } while(!is_occupied(to));
+                };
+                
+                if(slider_kind != BISHOP_KIND) {
+                    // All 4 rook rays for Rook and Queen.
+                    MM(RT); MM(LT); MM(FW); MM(BW);
+                }
+                
+                if(slider_kind != ROOK_KIND) {
+                    // All 4 bishop rays for Bishop and Queen.
+                    MM(FL); MM(BR); MM(FR); MM(BL);
+                }
+            });
     }
 
     // Remove moves that don't solve distant check by capturing checker or interposing on check ray.
@@ -841,8 +863,6 @@ void perft(int color, int last_move, int depth, int d)
     nodecount++;
     lep2 = ep2; lkm = Kmoves;
 
-    //printf("Depth %d (d = %d) #moves = %d\n", depth, d, (msp-first_move));
-
     for(i = first_move; i<msp; i++)  /* go through all moves */
     {
       /* fetch move from move stack */
@@ -879,7 +899,7 @@ path[d] = stack[i];
                 j = mode - 0xB0 + from;
                 h = (from+to) >> 1;
                 /* abort if Rook in check         */
-                if(capturable(color^COLOR, h)) continue;
+                if(capturable(other_color(color), h)) continue;
                 /* move Rook                      */
                 board[h] = board[j];
                 board[j] = DUMMY;
@@ -954,7 +974,7 @@ minor:
         // Seems more efficient to check king for move-into-check by generating opposition attack board
         //   once in gen_moves???
         if((piece != color && mode != EP_MODE) ||
-                 !capturable(color^COLOR, king_pos(color)))
+                 !capturable(other_color(color), king_pos(color)))
         {
       /* recursion or count end leaf */
             if(depth == 1 ) {
@@ -963,7 +983,7 @@ minor:
                 //if(count < 280) pboard(board, 12, 0);
             }
             else {
-                perft(COLOR-color, stack[i], depth-1, d+1);
+                perft(other_color(color), stack[i], depth-1, d+1);
                 if(HashFlag)
                 {
                     if(true || depth > 7) { //large entry
