@@ -22,9 +22,7 @@ static const int C_CONTACT = (C_KING|C_KNIGHT);
 static const int C_DISTANT = (C_ORTH|C_DIAG);
 
 // Capture codes, indexed by piece kind.
-static const int CAPTS[8]  = {0, C_PPAWN, C_MPAWN, C_KNIGHT, C_BISHOP, C_ROOK, C_QUEEN, C_KING};
-
-
+static const int KIND_TO_CAPT_CODE[8]  = {0, C_PPAWN, C_MPAWN, C_KNIGHT, C_BISHOP, C_ROOK, C_QUEEN, C_KING};
 
 // Board codes (32 per side: each 16 Pieces, 16 Pawns)
 static const int WHITE =  0x20;

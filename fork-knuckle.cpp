@@ -1,3 +1,5 @@
+#include <functional>
+
 #include <time.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -54,21 +56,21 @@ unsigned char
         CasRights,               /* one bit per castling, clear if allowed */
     HashFlag;
 
-/* overlays that interleave other piece info in pos[] */
-    unsigned char *const kind = (pc+1);        // Map from piece index to piece type - pawn, rook, king, etc.
+    // Various maps from piece index (in pieces list) to various other piece data
+    unsigned char *const index_to_kind = (pc+1);
 unsigned char *const cstl = (pc+1+NPCE);
-    unsigned char *const pos  = (pc+1+NPCE*2); // Map from piece index to board position in 0x88 format.
-    unsigned char *const code = (pc+1+NPCE*3);
+    unsigned char *const index_to_pos = (pc+1+NPCE*2);
+    unsigned char *const index_to_capt_code = (pc+1+NPCE*3);
 
 /* Piece counts hidden in the unused Pawn section, indexed by color */
-unsigned char *const LastKnightIndex  = (code-4);
-unsigned char *const FirstSlider = (code-3);
-unsigned char *const FirstPawn   = (code-2);
+unsigned char *const LastKnightIndex  = (index_to_capt_code-4);
+unsigned char *const FirstSlider = (index_to_capt_code-3);
+unsigned char *const FirstPawn   = (index_to_capt_code-2);
 
 /* offset overlays to allow negative array subscripts      */
 /* and avoid cache collisions of these heavily used arrays */
 unsigned char *const board      = (brd+1);                /* 12 x 16 board: dbl guard band */
-unsigned char *const capt_code  = (brd+1+0xBC+0x77);      /* piece type that can reach this*/
+unsigned char *const DIR_TO_CAPT_CODE  = (brd+1+0xBC+0x77);      /* piece type that can reach this*/
 char          *const delta_vec  = ((char *) brd+1+0xBC+0xEF+0x77); /* step to bridge certain vector */
 
     char noUnder = 0; // Fobid under-promotions?
@@ -93,15 +95,15 @@ clock_t ttt[30];
      */
     void delta_init() {
         /* contact captures (cannot be blocked) */
-        capt_code[FL] = capt_code[FR] = C_FDIAG;
-        capt_code[BL] = capt_code[BR] = C_BDIAG;
-        capt_code[LT] = capt_code[RT] = C_SIDE;
-        capt_code[FW] = C_FORW;
-        capt_code[BW] = C_BACKW;
+        DIR_TO_CAPT_CODE[FL] = DIR_TO_CAPT_CODE[FR] = C_FDIAG;
+        DIR_TO_CAPT_CODE[BL] = DIR_TO_CAPT_CODE[BR] = C_BDIAG;
+        DIR_TO_CAPT_CODE[LT] = DIR_TO_CAPT_CODE[RT] = C_SIDE;
+        DIR_TO_CAPT_CODE[FW] = C_FORW;
+        DIR_TO_CAPT_CODE[BW] = C_BACKW;
 
         for(int i=0; i<8; i++) {
             /* in all directions */
-            capt_code[KNIGHT_ROSE[i]] = C_KNIGHT;
+            DIR_TO_CAPT_CODE[KNIGHT_ROSE[i]] = C_KNIGHT;
             delta_vec[KNIGHT_ROSE[i]] = KNIGHT_ROSE[i];
             /* distant captures (can be blocked) */
             int k = QUEEN_DIR[i];
@@ -111,7 +113,7 @@ clock_t ttt[30];
                 /* scan along ray */
                 delta_vec[y+=k] = k;
                 /* note that first is contact */
-                if(j) capt_code[y] = m;
+                if(j) DIR_TO_CAPT_CODE[y] = m;
             }
         }
 
@@ -122,19 +124,19 @@ clock_t ttt[30];
 
         // Piece kind and position
         for(int file = 0; file < 8; file++) {
-            kind[BACK_ROW_INDEXES[file]]       = BACK_ROW_KINDS[file];
-            kind[BACK_ROW_INDEXES[file]+WHITE] = BACK_ROW_KINDS[file];
-            kind[file+PAWNS_INDEX]             = B_PAWN_KIND;
-            kind[file+PAWNS_INDEX+WHITE]       = W_PAWN_KIND;
+            index_to_kind[BACK_ROW_INDEXES[file]]       = BACK_ROW_KINDS[file];
+            index_to_kind[BACK_ROW_INDEXES[file]+WHITE] = BACK_ROW_KINDS[file];
+            index_to_kind[file+PAWNS_INDEX]             = B_PAWN_KIND;
+            index_to_kind[file+PAWNS_INDEX+WHITE]       = W_PAWN_KIND;
 
-            pos[BACK_ROW_INDEXES[file]]        = file+0x22;
-            pos[BACK_ROW_INDEXES[file]+WHITE]  = file+0x92;
-            pos[file+PAWNS_INDEX]              = file+0x32;
-            pos[file+PAWNS_INDEX+WHITE]        = file+0x82;
+            index_to_pos[BACK_ROW_INDEXES[file]]        = file+0x22;
+            index_to_pos[BACK_ROW_INDEXES[file]+WHITE]  = file+0x92;
+            index_to_pos[file+PAWNS_INDEX]              = file+0x32;
+            index_to_pos[file+PAWNS_INDEX+WHITE]        = file+0x82;
         }
 
         // Capture codes
-        for(int piece_index = 0; piece_index < NPCE; piece_index++) { code[piece_index] = CAPTS[kind[piece_index]]; }
+        for(int piece_index = 0; piece_index < NPCE; piece_index++) { index_to_capt_code[piece_index] = KIND_TO_CAPT_CODE[index_to_kind[piece_index]]; }
 
         // Castling spoilers (King and both original Rooks) - not sure what the shifts are for???
         cstl[KING_INDEX] = WHITE;
@@ -161,8 +163,8 @@ clock_t ttt[30];
      */
     void setup(void) {
         for(int i=0; i<WHITE-8; i++) {
-            if(pos[i]      ) board[pos[i]]       = WHITE + i;
-            if(pos[i+WHITE]) board[pos[i+WHITE]] = BLACK + i;
+            if(index_to_pos[i]      ) board[index_to_pos[i]]       = WHITE + i;
+            if(index_to_pos[i+WHITE]) board[index_to_pos[i+WHITE]] = BLACK + i;
         }
     }
 
@@ -176,7 +178,7 @@ clock_t ttt[30];
         for(int i=n-1; i>=0; i--) {
             for(int j=0; j<n; j++) {
                 if(bin) { printf(" %2x", b[16*i+j]&0xFF); }
-                else    { printf(" %c", (b[16*i+j]&0xFF)==GUARD ? '-' : asc[kind[(b[16*i+j]&0x7F)-WHITE]+((b[16*i+j]&WHITE)>>1)]); }
+                else    { printf(" %c", (b[16*i+j]&0xFF)==GUARD ? '-' : asc[index_to_kind[(b[16*i+j]&0x7F)-WHITE]+((b[16*i+j]&WHITE)>>1)]); }
             }
             printf("\n");
         }
@@ -186,16 +188,16 @@ clock_t ttt[30];
     int checker(int color) {
         for(int i=0; i<8; i++) {
             int v = KING_ROSE[i];
-            int x = pos[king_index(color)] + v;
+            int x = index_to_pos[king_index(color)] + v;
             int piece = board[x];
             if((piece & COLOR) == (color^COLOR)) {
-                if(code[piece-WHITE] & capt_code[-v]) return x;
+                if(index_to_capt_code[piece-WHITE] & DIR_TO_CAPT_CODE[-v]) return x;
             }
             v = KNIGHT_ROSE[i];
-            x = pos[king_index(color)] + v;
+            x = index_to_pos[king_index(color)] + v;
             piece = board[x];
             if((piece & COLOR) == (color^COLOR)) {
-                if(code[piece-WHITE] & capt_code[-v]) return x;
+                if(index_to_capt_code[piece-WHITE] & DIR_TO_CAPT_CODE[-v]) return x;
             }
         }
         return 0;
@@ -205,7 +207,7 @@ clock_t ttt[30];
         int col;
         
         /* remove all pieces */
-        for(int i=0; i<NPCE; i++) pos[i] = cstl[i] = 0;
+        for(int i=0; i<NPCE; i++) index_to_pos[i] = cstl[i] = 0;
         FirstSlider[WHITE] = 0x10;
         FirstSlider[BLACK] = 0x30;
         LastKnightIndex[WHITE]  = 0x00;
@@ -230,7 +232,7 @@ clock_t ttt[30];
                     int Piece = BISHOP_KIND, cc = 0, nr;
                     switch(c) {
                     case 'K':
-                        if(pos[col-WHITE] > 0) return -1;   /* two kings illegal */
+                        if(index_to_pos[col-WHITE] > 0) return -1;   /* two kings illegal */
                         Piece = KING_KIND;
                         nr = col-WHITE;
                         if(0x20*row == 7*(col-WHITE) && file == 4) cc = (col|col>>2|col>>4);
@@ -260,9 +262,9 @@ clock_t ttt[30];
                     default:
                         return -15;
                     }
-                    pos[nr] = ((file +  16*row) & 0x77) + 0x22;
-                    kind[nr] = Piece;
-                    code[nr] = CAPTS[Piece];
+                    index_to_pos[nr] = ((file +  16*row) & 0x77) + 0x22;
+                    index_to_kind[nr] = Piece;
+                    index_to_capt_code[nr] = KIND_TO_CAPT_CODE[Piece];
                     Zob[nr]  = Keys + 128*Piece + (col&BLACK)/8 - 0x22;
                     cstl[nr] = cc;
                     CasRights |= cc;       /* remember K & R on original location */
@@ -276,7 +278,7 @@ clock_t ttt[30];
                 if(row==0  && c != ' ') return -11;
             }
         }
-        if(pos[0] == 0 || pos[WHITE] == 0) return -5; /* missing king */
+        if(index_to_pos[0] == 0 || index_to_pos[WHITE] == 0) return -5; /* missing king */
 
         /* now do castle rights and side to move */
         cstl[DUMMY-WHITE]=0;
@@ -341,17 +343,20 @@ clock_t ttt[30];
     // Contruct a move in integer representation with 'to' in the low byte, 'from' in the second lowest byte and mode/flags in the high byte
     int mk_move(int from_pos, int to_pos, int mode) { return (mode << MODE_SHIFT) | (from_pos << FROM_SHIFT) | to_pos; }
 
-    // Base index for the color.
+    // @return Base index for the color.
     int base_index(int color) { return color-WHITE; }
     
-    // Piece index of the King.
+    // @return Piece index of the King.
     int king_index(int color) { return base_index(color) + KING_INDEX; }
 
-    // Piece index of the last slider - we typically iterate through them backwards.
+    // @return Piece index of the last knight - we typically iterate through them backwards.
+    int last_knight_index(int color) { return LastKnightIndex[color]; }
+    
+    // @return Piece index of the last slider - we typically iterate through them backwards.
     int last_slider_index(int color) { return base_index(color) + LAST_SLIDER_INDEX; }
     
-    // Position of the King.
-    int king_pos(int color) { return pos[king_index(color)]; }
+    // @return Position of the King.
+    int king_pos(int color) { return index_to_pos[king_index(color)]; }
 
     // @return true iff the target square is open or opposition (to take)
     bool can_move_to(int color, int to) {
@@ -376,8 +381,11 @@ clock_t ttt[30];
         gen_move_to(color, from_pos, from_pos + dir);
     }
 
-    // Forward direction for the color - this is just a trick to get FW/BW, i.e. +/- 0x10.
+    // Forward direction for this color - just a handy trick to get FW/BW, i.e. +/- 0x10.
     int forward_dir(int color) { return 0x30 - color; }
+
+    // Backward direction for this color.
+    int backward_dir(int color) { return -forward_dir(color); }
 
     // All pinned pieces are removed from lists.
     // All their remaining legal moves are generated.
@@ -395,9 +403,9 @@ clock_t ttt[30];
         //   moves along the pin line.
         for(int p=FirstSlider[COLOR-color]; p<COLOR-WHITE+FW-color; p++)
         {   /* run through enemy slider list */
-            int j = pos[p]; // enemy slider
+            int j = index_to_pos[p]; // enemy slider
             if(j==0) continue;  /* currently captured */
-            if(capt_code[j-k]&code[p]&C_DISTANT)
+            if(DIR_TO_CAPT_CODE[j-k]&index_to_capt_code[p]&C_DISTANT)
             {   /* slider aimed at our king */
                 int v = delta_vec[j-k];
                 int x = k;     /* trace ray from our King */
@@ -415,12 +423,12 @@ clock_t ttt[30];
                         /* remove from piece list     */
                         /* and put on pin stack       */
                         m -= WHITE;
-                        ppos[psp] = pos[m];
-                        pos[m] = 0;
+                        ppos[psp] = index_to_pos[m];
+                        index_to_pos[m] = 0;
                         pstack[psp++] = m;
                         int z = x<<8;
 
-                        if(kind[m]<3)
+                        if(index_to_kind[m]<3)
                         {   /* flag promotions */
                             if(!((prank^x)&0xF0)) z |= PROMO_SHIFTED;
                             y = x + forward; 
@@ -439,7 +447,7 @@ clock_t ttt[30];
                                 if(y+LT==j) { Promo++; push_move_old(z,y+LT); }
                             }
                         } else
-                        if(code[m]&capt_code[j-k]&C_DISTANT)
+                        if(index_to_capt_code[m]&DIR_TO_CAPT_CODE[j-k]&C_DISTANT)
                         {   /* slider moves along pin ray */
                             y = x;
                             do{ /* moves upto capt. pinner*/
@@ -467,7 +475,7 @@ clock_t ttt[30];
         int king_pos = this->king_pos(color);
         int y = last_move&0xFF;
 
-        if(capt_code[king_pos-y] & code[board[y]-WHITE] & C_CONTACT) {
+        if(DIR_TO_CAPT_CODE[king_pos-y] & index_to_capt_code[board[y]-WHITE] & C_CONTACT) {
             check_data.add_contact_check(y, delta_vec[y-king_pos]);
         }
     }
@@ -509,26 +517,26 @@ clock_t ttt[30];
         int y = x - forward;
         
         if(!((prank^y)&0xF0)) Promo++,z |= PROMO_SHIFTED;
-        if((board[y+RT]&m)==m && pos[board[y+RT]-WHITE]) push_move_old((y+RT)<<8,z);
-        if((board[y+LT]&m)==m && pos[board[y+LT]-WHITE]) push_move_old((y+LT)<<8,z);
+        if((board[y+RT]&m)==m && index_to_pos[board[y+RT]-WHITE]) push_move_old((y+RT)<<8,z);
+        if((board[y+LT]&m)==m && index_to_pos[board[y+LT]-WHITE]) push_move_old((y+LT)<<8,z);
 
         // Knights
-        for(int p = LastKnightIndex[color]; p > king_index(color); p--)
+        for(int p = last_knight_index(color); p > king_index(color); p--)
         {
-            int k = pos[p];
+            int k = index_to_pos[p];
             if(k==0) continue;
-            int m = code[p];
-            int i = capt_code[k-x];
+            int m = index_to_capt_code[p];
+            int i = DIR_TO_CAPT_CODE[k-x];
             if(i&m) push_move_old(k<<8,x);
         }
 
         // Sliders
         for(int p=color-WHITE+FL; p>=FirstSlider[color]; p--)
         {
-            int k = pos[p];
+            int k = index_to_pos[p];
             if(k==0) continue;
-            int m = code[p];
-            int i = capt_code[k-x];
+            int m = index_to_capt_code[p];
+            int i = DIR_TO_CAPT_CODE[k-x];
             if(i&m)
             {
                 int v = delta_vec[k-x];
@@ -548,7 +556,7 @@ clock_t ttt[30];
 
         for(int p=FirstPawn[color]; p<color-WHITE+PAWNS_INDEX+8; p++)
         {
-            int x = pos[p]; if(x==0) continue;
+            int x = index_to_pos[p]; if(x==0) continue;
             int z = x<<8;
 
             /* flag promotions */
@@ -571,8 +579,8 @@ clock_t ttt[30];
 
     // All knight moves.
     void gen_knight_moves(int color) {
-        for(int knight_index = LastKnightIndex[color]; knight_index > king_index(color); knight_index--) {
-            int knight_pos = pos[knight_index]; if(knight_pos == 0) continue;
+        for(int knight_index = last_knight_index(color); knight_index > king_index(color); knight_index--) {
+            int knight_pos = index_to_pos[knight_index]; if(knight_pos == 0) continue;
             auto M = [=](int dir) { gen_move(color, knight_pos, dir); };
             // All 8 knight directions.
             M(FRR); M(FFR); M(FFL); M(FLL); M(BLL); M(BBL); M(BBR); M(BRR);
@@ -582,8 +590,8 @@ clock_t ttt[30];
     // All slider moves.
     void gen_slider_moves(int color) {
         for(int slider_index = last_slider_index(color); slider_index>=FirstSlider[color]; slider_index--) {   
-            int slider_pos = pos[slider_index]; if(slider_pos==0) continue;
-            int slider_kind = kind[slider_index];
+            int slider_pos = index_to_pos[slider_index]; if(slider_pos==0) continue;
+            int slider_kind = index_to_kind[slider_index];
 
             auto MM = [=](int dir) {
                 int to = slider_pos;
@@ -662,7 +670,7 @@ clock_t ttt[30];
        while(psp>0) {
            // Pop pinned piece and link in old place it remembers.
            int m = pstack[--psp];
-           pos[m] = ppos[psp];
+           index_to_pos[m] = ppos[psp];
         }
     }
 
@@ -721,41 +729,79 @@ clock_t ttt[30];
         restore_pinned_pieces(pstack, ppos, psp);
     }
 
+    // @return true iff the piece at the given position is a pawn of the given color.
+    bool is_pawn(int color, int piece_pos) {
+        int pawn_mask = color | PAWNS_INDEX;
+
+        return (board[piece_pos] & pawn_mask) == pawn_mask;
+    }
+
+    // @return true iff the two capture codes have at least one common flag.
+    bool is_common_capt_code(int capt_code_1, int capt_code_2) { return capt_code_1 & capt_code_2; }
+
+    // Iterate through all the knights.
+    // @return If the handler fn returns non-0 then we early out with that value, else return 0.
+    int foreach_knight(int color, std::function<int(int, int)> knight_handler_fn) {
+        for(int knight_index = last_knight_index(color); knight_index >= king_index(color); knight_index--) {
+            int knight_pos = index_to_pos[knight_index]; if(knight_pos == 0) continue;
+
+            int value = knight_handler_fn(knight_index, knight_pos);
+
+            if(value) return value;
+        }
+
+        return 0;
+    }
+    
     // Full check for captures on square x by all opponent pieces.
-    int capturable(int color, int x) {
+    // Note that color is the color of the capturing piece.
+    int capturable(int color, int piece_pos) {
         int i, k, v, y, m, p;
 
         /* check for pawns, through 2 squares on board */
-        v = color - 48; m = color | PAWNS_INDEX;
-        if((board[x+v+RT]&m)==m) return 1; 
-        if((board[x+v+LT]&m)==m) return 2;
+        int backward = backward_dir(color);
+        if(is_pawn(color, piece_pos+backward+RT)) { return 1; }
+        if(is_pawn(color, piece_pos+backward+LT)) { return 2; }
 
-        for(p=LastKnightIndex[color]; p>=king_index(color); p--)
-        {
-            k = pos[p];
-            if(k==0) continue;
-            m = code[p];
-            i = capt_code[k-x];
-            if(i&m) return p+256;
+        // int knight_capture_value =
+        //     foreach_knight(color,
+        //                    [=](int knight_index, int knight_pos) {
+        //                        int knight_capt_code = index_to_capt_code[knight_index];
+        //                        int dir_capt_code = DIR_TO_CAPT_CODE[knight_pos-piece_pos];
+                               
+        //                        if(is_common_capt_code(knight_capt_code, dir_capt_code)) {
+        //                            return knight_index+256;
+        //                        }
+                               
+        //                        return 0;
+        //                    });
+        // if(knight_capture_value) return knight_capture_value;
+        for(int knight_index = last_knight_index(color); knight_index >= king_index(color); knight_index--) {
+            int knight_pos = index_to_pos[knight_index]; if(knight_pos == 0) continue;
+            
+            int knight_capt_code = index_to_capt_code[knight_index];
+            int dir_capt_code = DIR_TO_CAPT_CODE[knight_pos-piece_pos];
+            
+            if(is_common_capt_code(knight_capt_code, dir_capt_code)) return knight_index+256;
         }
 
-        for(p=color-WHITE+FL; p>=FirstSlider[color]; p--)
+        for(int slider_index = last_slider_index(color); slider_index>=FirstSlider[color]; slider_index--)
         {
-            k = pos[p];
+            k = index_to_pos[slider_index];
             if(k==0) continue;
-            m = code[p];
-            i = capt_code[k-x];
+            m = index_to_capt_code[slider_index];
+            i = DIR_TO_CAPT_CODE[k-piece_pos];
             if(i&m)
             {
-                v = delta_vec[k-x];
-                y = x;
+                int v = delta_vec[k-piece_pos];
+                y = piece_pos;
                 while(board[y+=v]==DUMMY);
                 if(y==k) return p+512;
             }
         }
 
         return 0;
-    }
+    }    
 
 void perft(int color, int last_move, int depth, int d)
 {   /* recursive perft, with in-lined make/unmake */
@@ -794,13 +840,13 @@ path[d] = stack[i];
             if(mode == EP_MODE) capt ^= 0x10; else
             if(mode == PROMO_MODE)
             {   /* Promotion. Shuffle piece list :( */
-                oldpiece = piece; pos[piece-WHITE]=0;
+                oldpiece = piece; index_to_pos[piece-WHITE]=0;
                 /* set up for new Queen first */
                 piece = --FirstSlider[color]+WHITE;
-                kind[piece-WHITE] = QUEEN_KIND;
-                code[piece-WHITE] = C_QUEEN;
+                index_to_kind[piece-WHITE] = QUEEN_KIND;
+                index_to_capt_code[piece-WHITE] = C_QUEEN;
                 Zob[piece-WHITE]  = Keys + 128*QUEEN_KIND + (color&BLACK)/8 - 0x22;
-                pos[piece-WHITE]  = from;
+                index_to_pos[piece-WHITE]  = from;
                 HashKey ^= Zobrist(piece, from) ^ Zobrist(oldpiece, from);
                 HighKey ^= Zobrist(piece, from+8) ^ Zobrist(oldpiece, from+8);
                 Index += 14457159; /* prevent hits by non-promotion moves */
@@ -813,7 +859,7 @@ path[d] = stack[i];
                 /* move Rook                      */
                 board[h] = board[j];
                 board[j] = DUMMY;
-                pos[board[h]-WHITE] = h;
+                index_to_pos[board[h]-WHITE] = h;
                 HashKey ^= Zobrist(board[h],h) ^ Zobrist(board[h],j);
                 HighKey ^= Zobrist(board[h],h+8) ^ Zobrist(board[h],j+8);
             }
@@ -874,11 +920,11 @@ minor:
         board[to] = piece;
 
         /* update piece location in piece list    */
-        pos[piece-WHITE] = to;
+        index_to_pos[piece-WHITE] = to;
 
 
         /* remove captured piece from piece list  */
-        pos[victim-WHITE] = 0;
+        index_to_pos[victim-WHITE] = 0;
 
         // Check for legal move. Seems we check for move-into-check for only king moves and castling???
         // Makes sense, since we treat pinned pieces specially in gen_moves already - only way to move into check is by king move.
@@ -912,8 +958,8 @@ minor:
       /* retract move */
 
         /* restore piece list */
-        pos[piece-WHITE] = from;
-        pos[victim-WHITE] = capt;
+        index_to_pos[piece-WHITE] = from;
+        index_to_pos[victim-WHITE] = capt;
 
         /* restore board */
         board[to] = DUMMY;      /* restore board  */
@@ -927,38 +973,38 @@ quick:
                 if(noUnder) {
                     FirstSlider[color]++;
                     piece =oldpiece;
-                    pos[piece-WHITE] = from;
+                    index_to_pos[piece-WHITE] = from;
                     board[from] = piece;
                 } else
-                if(--kind[piece-WHITE] >= KNIGHT_KIND)
+                if(--index_to_kind[piece-WHITE] >= KNIGHT_KIND)
                 {
                     HashKey ^= Zobrist(piece, to);
                     HighKey ^= Zobrist(piece, to+8);
-                    if(kind[piece-WHITE] == KNIGHT_KIND)
+                    if(index_to_kind[piece-WHITE] == KNIGHT_KIND)
                     {   /* Knight must be put in Knight list */
                         FirstSlider[color]++;
                         piece = ++LastKnightIndex[color]+WHITE;
-                        pos[piece-WHITE]  = from;
-                        kind[piece-WHITE] = KNIGHT_KIND;
+                        index_to_pos[piece-WHITE]  = from;
+                        index_to_kind[piece-WHITE] = KNIGHT_KIND;
                         Zob[piece-WHITE]  = Keys + 128*KNIGHT_KIND
                                                  + (color&BLACK)/8 - 0x22;
                     } else Zob[piece-WHITE] -= 128;
-                    code[piece-WHITE] = CAPTS[kind[piece-WHITE]];
+                    index_to_capt_code[piece-WHITE] = KIND_TO_CAPT_CODE[index_to_kind[piece-WHITE]];
                     HashKey ^= Zobrist(piece, to);
                     HighKey ^= Zobrist(piece, to+8);
                     goto minor; /* try minor promotion */
                 } else
                 {   /* All promotions tried, demote to Pawn again */
-                    kind[piece-WHITE] = QUEEN_KIND; /* put Q back for hash store */
+                    index_to_kind[piece-WHITE] = QUEEN_KIND; /* put Q back for hash store */
                     piece = oldpiece; LastKnightIndex[color]--;
-                    pos[piece-WHITE] = from;
+                    index_to_pos[piece-WHITE] = from;
                     board[from] = piece;
                 }
             } else
             {   /* undo Rook move */
                 board[j] = board[h];
                 board[h] = DUMMY;
-                pos[board[j]-WHITE] = j;
+                index_to_pos[board[j]-WHITE] = j;
             }
         }
 
@@ -1062,7 +1108,7 @@ int setup_board(const char* FEN) {
 
     return color;
 }
-
+    
 }; //class P
 
 int main(int argc, char **argv)
@@ -1107,5 +1153,4 @@ int main(int argc, char **argv)
 
     p.doit(depth, color, split);
 }
-
 
