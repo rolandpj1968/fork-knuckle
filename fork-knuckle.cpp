@@ -185,7 +185,7 @@ clock_t ttt[30];
         printf("\n");
     }
 
-    int checker(int color) {
+    int checker(const int color) {
         for(int i=0; i<8; i++) {
             int v = KING_ROSE[i];
             int x = index_to_pos[king_index(color)] + v;
@@ -349,6 +349,12 @@ clock_t ttt[30];
     // @return Piece index of the King.
     static int king_index(const int color) { return base_index(color) + KING_INDEX; }
 
+    // @return Piece index of the first pawn.
+    int first_pawn_index(const int color) { return color_to_first_pawn_index[color]; }
+
+    // @return Piece index of the first pawn.
+    static int last_pawn_index(const int color) { return color-WHITE+PAWNS_INDEX+8 - 1; }
+
     // @return Piece index of the first knight.
     static int first_knight_index(const int color) { return king_index(color) + 1; }
     
@@ -380,6 +386,14 @@ clock_t ttt[30];
             });                                                         \
     } while(false)  
     
+#   define FOREACH_PAWN(color, block) do {                            \
+        const int color__ = (color);                                    \
+        FOREACH_PIECE(first_pawn_index(color__), last_pawn_index(color__), { \
+                const int pawn_index = piece_index__; const int pawn_pos = piece_pos__; \
+                do block while(false);                                  \
+            });                                                         \
+    } while(false)  
+    
 #   define FOREACH_KNIGHT_OR_KING(color, block) do {                    \
         const int color__ = (color);                                    \
         FOREACH_PIECE(king_index(color__), last_knight_index(color__), { \
@@ -388,12 +402,6 @@ clock_t ttt[30];
             });                                                         \
     } while(false)  
     
-    // // Iterate through all the knights of the given color.
-    // // @return If the handler fn returns non-0 then we early out with that value, else return 0.
-    // inline int foreach_knight_or_king_value(const int color, const std::function<int(int, int)> piece_handler_fn) {
-    //     return foreach_piece_value(king_index(color), last_knight_index(color), piece_handler_fn);
-    // }
-
 #   define FOREACH_SLIDER(color, block) do {                            \
         const int color__ = (color);                                    \
         FOREACH_PIECE(first_slider_index(color__), last_slider_index(color__), { \
@@ -437,20 +445,20 @@ clock_t ttt[30];
     }
     
     // @return true iff the target square is open or opposition (to take).
-    bool can_move_to(int color, int to) {
+    bool can_move_to(const int color, int to) {
         return !(board[to]&color);
     }
 
     // Generate one move if to square is available (empty or opponent).
     // @return occupant of target square (for slider loops)
-    void maybe_gen_move_to(int color, int from_pos, int to) {
+    void maybe_gen_move_to(const int color, int from_pos, int to) {
         if(can_move_to(color, to)) {
             push_move_old((from_pos << 8), to);
         }
     }
 
     // Generate one move if to square is available (empty or opponent).
-    void maybe_gen_move(int color, int from_pos, int dir) {
+    void maybe_gen_move(const int color, int from_pos, int dir) {
         maybe_gen_move_to(color, from_pos, from_pos + dir);
     }
 
@@ -467,7 +475,7 @@ clock_t ttt[30];
     // All pinned pieces are removed from lists.
     // All their remaining legal moves are generated.
     // All distant checks are detected.
-    void gen_pincheck_moves(int color, CheckData& check_data, int pstack[], int ppos[], int& psp) {
+    void gen_pincheck_moves(const int color, CheckData& check_data, int pstack[], int ppos[], int& psp) {
         /* Some general preparation */
         int k = king_pos(color);            /* position of my King */
         int forward = forward_dir(color);   /* forward step */
@@ -544,7 +552,7 @@ clock_t ttt[30];
     }
 
     // Determine if there is a contact check - there can only be one and it must be the last piece moved.
-    void get_contact_check(int color, int last_move, CheckData& check_data) {
+    void get_contact_check(const int color, int last_move, CheckData& check_data) {
         int king_pos = this->king_pos(color);
         int last_to = last_move & 0xFF;
 
@@ -554,7 +562,7 @@ clock_t ttt[30];
     }
 
     // Generate castling moves.
-    void gen_castling_moves(int color) {
+    void gen_castling_moves(const int color) {
         if(!(color&CasRights)) {
             int k = king_pos(color);           // King position
             
@@ -568,7 +576,7 @@ clock_t ttt[30];
     }
 
     // Generate en-passant captures (at most two)
-    void gen_ep_moves(int color, int ep_flag) {
+    void gen_ep_moves(const int color, int ep_flag) {
         int mask = color | PAWNS_INDEX; // Is this index?
 
         int x = ep_flag+1;
@@ -582,14 +590,14 @@ clock_t ttt[30];
     static int promo_rank(const int color) { return 0xD0 - 5*(color>>1); }
 
     // @return true iff the given positions have the same rank
-    static bool is_same_rank(int pos1, int pos2) { return !((pos1^pos2)&0xF0); }
+    static bool is_same_rank(const int pos1, const int pos2) { return !((pos1^pos2)&0xF0); }
     
     // @return promotion rank for the given color - 2nd for black and 7th for white.
-    static bool is_promo_rank(const int color, int pos) { return is_same_rank(promo_rank(color), pos); }
+    static bool is_promo_rank(const int color, const int pos) { return is_same_rank(promo_rank(color), pos); }
     
     // On contact check only King retreat or capture helps.
     // Use in that case specialized recapture generator.
-    void gen_piece_moves_in_contact_check(int color, int checker_pos) {
+    void gen_piece_moves_in_contact_check(const int color, int checker_pos) {
         // Check for pawns - can only be 2.
         int backward = backward_dir(color);
         int checker_pos_with_mode = checker_pos;
@@ -615,33 +623,30 @@ clock_t ttt[30];
     }
 
     // All pawn moves.
-    void gen_pawn_moves(int color) {
+    void gen_pawn_moves(const int color) {
         int forward = forward_dir(color);   // forward step
         int rank = 0x58 - (forward>>1);     // 4th/5th rank
-        int prank = 0xD0 - 5*(color>>1);    // 2nd/7th rank
         int mask = color|0x80;              // own color, empty square, or guard
 
-        for(int p=color_to_first_pawn_index[color]; p<color-WHITE+PAWNS_INDEX+8; p++)
-        {
-            int x = index_to_pos[p]; if(x==0) continue;
-            int z = x<<8;
+        FOREACH_PAWN(color, {
+            int z = pawn_pos<<8;
 
             /* flag promotions */
-            if(!((prank^x)&0xF0)) Promo++,z |= PROMO_SHIFTED;
+            if(is_promo_rank(color, pawn_pos)) { Promo++; z |= PROMO_SHIFTED; }
 
             /* capture moves */
-            int y = x + forward;
-            if(!(board[y+LT]&mask)) push_move_old(z,y+LT);
-            if(!(board[y+RT]&mask)) push_move_old(z,y+RT);
+            int pawn_pos_fw = pawn_pos + forward;
+            if(!(board[pawn_pos_fw+LT]&mask)) push_move_old(z,pawn_pos_fw+LT);
+            if(!(board[pawn_pos_fw+RT]&mask)) push_move_old(z,pawn_pos_fw+RT);
             
             /* non-capture moves */
-            if(!(board[y]&COLOR))
-            {   push_move_old(z,y);
-                y += forward;
-                if(!((board[y]&COLOR) | ((rank^y)&0xF0)))
-                    push_move_old(z,y|y<<MODE_SHIFT);        /* e.p. flag */
+            if(!(board[pawn_pos_fw]&COLOR))
+            {   push_move_old(z,pawn_pos_fw);
+                pawn_pos_fw += forward;
+                if(!((board[pawn_pos_fw]&COLOR) | ((rank^pawn_pos_fw)&0xF0)))
+                    push_move_old(z,pawn_pos_fw|pawn_pos_fw<<MODE_SHIFT);        // e.p. flag
             }
-        }
+            });
     }
 
     // All knight moves.
@@ -680,7 +685,7 @@ clock_t ttt[30];
     }
 
     // Remove moves that don't solve distant check by capturing checker or interposing on check ray.
-    void remove_illegal_moves(int color, int first_move, CheckData& check_data) {
+    void remove_illegal_moves(const int color, int first_move, CheckData& check_data) {
         if(check_data.in_check) {
             int k = king_pos(color);           // King position.
             for(int i=first_move; i<msp; i++) { // Go through all moves.
@@ -702,7 +707,7 @@ clock_t ttt[30];
     }
 
     // Generate piece moves when not in contact check.
-    void gen_piece_moves(int color, int first_move, CheckData& check_data) {
+    void gen_piece_moves(const int color, int first_move, CheckData& check_data) {
         // Pawns
         gen_pawn_moves(color);
         // Knights
@@ -733,9 +738,19 @@ clock_t ttt[30];
         }
     }
 
-    // This seems to be a pseudo-move generator (but check).
+    // Try to get the compiler to inline specialise per color.
+    // Seemingly to no avail :D.
+    void gen_moves(const int color, int last_move, int d) {
+        if(color == WHITE) {
+            gen_moves2(WHITE, last_move, d);
+        } else {
+            gen_moves2(BLACK, last_move, d);
+        }
+    }
+
+        // This seems to be a pseudo-move generator (but check).
     // It seems like we reject move-into-check (king capturable) when making the move.
-    void gen_moves(int color, int last_move, int d) {
+    void gen_moves2(const int color, int last_move, int d) {
         CheckData check_data;
         int pstack[12], ppos[12], psp=0, first_move=msp;
         int ep_flag = last_move>>MODE_SHIFT&0xFF;
@@ -815,7 +830,7 @@ clock_t ttt[30];
         return 0;
     }    
 
-void perft(int color, int last_move, int depth, int d)
+void perft(const int color, int last_move, int depth, int d)
 {   /* recursive perft, with in-lined make/unmake */
     int i, j, h, oldpiece, store;
     int first_move, piece, victim, from, to, capt, mode;
