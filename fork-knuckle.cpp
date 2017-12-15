@@ -73,7 +73,7 @@ unsigned char *const board      = (brd+1);                /* 12 x 16 board: dbl 
 unsigned char *const DIR_TO_CAPT_CODE  = (brd+1+0xBC+0x77);      /* piece type that can reach this*/
 char          *const delta_vec  = ((char *) brd+1+0xBC+0xEF+0x77); /* step to bridge certain vector */
 
-    char noUnder = 0; // Fobid under-promotions?
+    char noUnder = 0; // Non-zero to fobid under-promotions.
 
 char Keys[1040];
 int path[100];
@@ -487,6 +487,11 @@ clock_t ttt[30];
     // @return the piece index associated with this piece.
     static int piece_to_index(const int piece) { return piece - WHITE; }
 
+    // @return true iff the given piece pos is on the given slider's ray (regardless of whether there are other pieces in between).
+    bool is_on_slider_ray(const int piece_pos, const int slider_pos, const int slider_index) const {
+        return DIR_TO_CAPT_CODE[slider_pos-piece_pos] & index_to_capt_code[slider_index] & C_DISTANT;
+    }
+
     long n_pincheck_calls = 0;
     long n_pincheck_sliders = 0;
     long n_pincheck_checks = 0;
@@ -506,7 +511,7 @@ clock_t ttt[30];
         //   on pin stack for rest of move generation, after generating its
         //   moves along the pin line.
         FOREACH_SLIDER(other_color(color), { n_pincheck_sliders++;
-                if(DIR_TO_CAPT_CODE[slider_pos-king_pos]&index_to_capt_code[slider_index]&C_DISTANT) { n_pincheck_checks++;
+                if(is_on_slider_ray(king_pos, slider_pos, slider_index)) { n_pincheck_checks++;
                     // Slider aimed at our king.
                     int check_dir = delta_vec[slider_pos-king_pos];
                     int pinned_pos = next_nonempty(king_pos, check_dir);
@@ -621,6 +626,7 @@ clock_t ttt[30];
         if(is_promo_rank(color, checker_pos + backward)) Promo++,checker_pos_with_mode |= PROMO_SHIFTED; // Bug - promo should only ++ if this finds a move, and possible ++ twice, once for each pawn
 
         // I have no idea what the extra second condition is here - it looks trivially true, but empirically is required.
+        // Maybe something to do with pinned piece elimination? Ah, yes. Pinned pieces are removed from the pieces list, but not from the board!
         if(is_pawn(color, checker_pos+backward+LT) && index_to_pos[board[checker_pos+backward+LT]-WHITE]) { push_move_old((checker_pos+backward+LT) << 8, checker_pos_with_mode); }
         if(is_pawn(color, checker_pos+backward+RT) && index_to_pos[board[checker_pos+backward+RT]-WHITE]) { push_move_old((checker_pos+backward+RT) << 8, checker_pos_with_mode); }
 
@@ -773,7 +779,7 @@ clock_t ttt[30];
         int ep_flag = last_move>>MODE_SHIFT&0xFF;
         ep1 = ep2 = msp; Promo = 0;
 
-        // Pinned-piece moves and non-constanct check detection.
+        // Pinned-piece moves and non-contact check detection.
         gen_pincheck_moves(color, check_data, pstack, ppos, psp);
 
         // Detect contact checks.
