@@ -334,15 +334,31 @@ clock_t ttt[30];
         }
     };
 
-    // Push a mvoe to the move stack - from already shifted and with sundry extra flags anywhere (Eeek!)
-    void push_move_old(int from, int to) { stack[msp++] = from | to; }
+    // Push a move to the move stack - from already shifted and with sundry extra flags anywhere (Eeek!)
+    void push_move_old(const int from, const int to) { stack[msp++] = from | to; }
+
+    // Push a pawn move to the move stack - and add promo flag where required.
+    // Bogus cos of already shifted from. Ugh!
+    void push_pawn_move_old_bogus(const int color, int from, const int to) {
+        if(is_promo_rank(color, from)) {
+            Promo++;
+            from |= PROMO_SHIFTED;
+        }
+        push_move_old(from, to);
+    }
 
     // Contruct a move in integer representation with 'to' in the low byte and 'from' in the second lowest byte
-    int mk_move(int from_pos, int to_pos) { return (from_pos << 8) | to_pos; }
+    static int mk_move(const int from_pos, const int to_pos) { return (from_pos << FROM_SHIFT) | to_pos; }
 
     // Contruct a move in integer representation with 'to' in the low byte, 'from' in the second lowest byte and mode/flags in the high byte
-    int mk_move(int from_pos, int to_pos, int mode) { return (mode << MODE_SHIFT) | (from_pos << FROM_SHIFT) | to_pos; }
+    static int mk_move(const int from_pos, const int to_pos, const int mode) { return (mode << MODE_SHIFT) | mk_move(from_pos, to_pos); }
 
+    // Push a normal move.
+    void push_move(const int from_pos, const int to_pos) { stack[msp++] = mk_move(from_pos, to_pos); }
+
+    // Push a special-mode move.
+    void push_move(const int from_pos, const int to_pos, const int mode) { stack[msp++] = mk_move(from_pos, to_pos, mode); }
+    
     // @return Base index for the color.
     static int base_index(const int color) { return color-WHITE; }
     
@@ -466,6 +482,19 @@ clock_t ttt[30];
     // Generate one move if to square is available (empty or opponent).
     void maybe_gen_move(const int color, int from_pos, int dir) {
         maybe_gen_move_to(color, from_pos, from_pos + dir);
+    }
+
+    // Generate one move if to square is available (empty or opponent).
+    // @return occupant of target square (for slider loops)
+    void maybe_gen_move_to_new(const int color, int from_pos, int to) {
+        if(can_move_to(color, to)) {
+            push_move(from_pos, to);
+        }
+    }
+
+    // Generate one move if to square is available (empty or opponent).
+    void maybe_gen_move_new(const int color, int from_pos, int dir) {
+        maybe_gen_move_to_new(color, from_pos, from_pos + dir);
     }
 
     // Forward direction for this color - just a handy trick to get FW/BW, i.e. +/- 0x10.
@@ -674,7 +703,7 @@ clock_t ttt[30];
 
     // All knight moves.
     void gen_knight_moves(const int color) {
-#       define M(dir) maybe_gen_move(color, knight_pos, (dir))
+#       define M(dir) maybe_gen_move_new(color, knight_pos, (dir))
         FOREACH_KNIGHT(color, {
                 // All 8 knight directions.
                 M(FRR); M(FFR); M(FFL); M(FLL); M(BLL); M(BBL); M(BBR); M(BRR);
