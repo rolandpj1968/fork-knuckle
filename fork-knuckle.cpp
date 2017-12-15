@@ -414,7 +414,10 @@ clock_t ttt[30];
     int king_pos(const int color) const { return index_to_pos[king_index(color)]; }
 
     // @return true iff the given square is occupied by a piece of either color - guards are considered occupied
-    bool is_occupied(const int pos) const { return board[pos]&COLOR; }
+    bool is_occupied(const int pos) const { return board[pos] & COLOR; }
+
+    // @return true iff the given square is not occupied by a piece of either color - guards are considered occupied
+    bool is_unoccupied(const int pos) const { return !is_occupied(pos); }
 
     // @return true iff the given square is empty
     bool is_empty(const int pos) const { return board[pos] == DUMMY; }
@@ -481,6 +484,9 @@ clock_t ttt[30];
         return ray_pos;
     }
 
+    // @return the piece index associated with this piece.
+    static int piece_to_index(const int piece) { return piece - WHITE; }
+
     long n_pincheck_calls = 0;
     long n_pincheck_sliders = 0;
     long n_pincheck_checks = 0;
@@ -510,52 +516,49 @@ clock_t ttt[30];
                         check_data.add_distant_check(slider_pos, check_dir);
                     } else {
                         int pinned_piece = board[pinned_pos];
-                        if(is_color(color, pinned_piece)) {   // First on ray from King is ours.
-                            int y = pinned_pos;
-                            while(board[y+=check_dir] == DUMMY);
-                            if(y==slider_pos)
-                            {   /* our piece at pinned_pos is pinned!  */
-                                /* remove from piece list     */
-                                /* and put on pin stack       */
-                                pinned_piece -= WHITE;
-                                ppos[psp] = index_to_pos[pinned_piece];
-                                index_to_pos[pinned_piece] = 0;
-                                pstack[psp++] = pinned_piece;
-                                int z = pinned_pos<<8;
-                                
-                                if(index_to_kind[pinned_piece]<3)
-                                {   /* flag promotions */
-                                    if(!((prank^pinned_pos)&0xF0)) z |= PROMO_SHIFTED;
-                                    y = pinned_pos + forward; 
-                                    if(!(check_dir&7)) /* Pawn along file */
-                                    {   /* generate non-captures  */
-                                        if(!(board[y]&COLOR))
-                                        {   push_move_old(z,y);
-                                            y += forward;Promo++;
-                                            if(!((board[y]&COLOR) | ((rank^y)&0xF0)))
-                                                push_move_old(z,y|y<<MODE_SHIFT);
-                                        }
-                                    } else
-                                    {   /* diagonal pin       */
-                                        /* try capture pinner */
-                                        if(y+RT==slider_pos) { Promo++; push_move_old(z,y+RT); }
-                                        if(y+LT==slider_pos) { Promo++; push_move_old(z,y+LT); }
+                        if(is_color(color, pinned_piece)                             // First piece on ray from King is ours.
+                           && next_nonempty(pinned_pos, check_dir) == slider_pos) {  // Next piece on ray is the enemy slider - we're pinned!
+
+                            /* remove from piece list     */
+                            /* and put on pin stack       */
+                            const int pinned_piece_index = pinned_piece - WHITE;
+                            ppos[psp] = index_to_pos[pinned_piece_index];
+                            index_to_pos[pinned_piece_index] = 0;
+                            pstack[psp++] = pinned_piece_index;
+                            int z = pinned_pos<<8;
+                            
+                            if(index_to_kind[pinned_piece_index]<3)
+                            {   /* flag promotions */
+                                if(!((prank^pinned_pos)&0xF0)) z |= PROMO_SHIFTED;
+                                int y = pinned_pos + forward; 
+                                if(!(check_dir&7)) /* Pawn along file */
+                                {   /* generate non-captures  */
+                                    if(is_unoccupied(y))
+                                    {   push_move_old(z,y);
+                                        y += forward;Promo++;
+                                        if(!((board[y]&COLOR) | ((rank^y)&0xF0)))
+                                            push_move_old(z,y|y<<MODE_SHIFT);
                                     }
                                 } else
-                                    if(index_to_capt_code[pinned_piece]&DIR_TO_CAPT_CODE[slider_pos-king_pos]&C_DISTANT)
-                                    {   /* slider moves along pin ray */
-                                        y = pinned_pos;
-                                        do{ /* moves upto capt. pinner*/
-                                            y += check_dir;
-                                            push_move_old(z,y);
-                                        } while(y != slider_pos);
-                                        y = pinned_pos;
-                                        while((y-=check_dir) != king_pos)
-                                        {   /* moves towards King     */
-                                            push_move_old(z,y);
-                                        }
+                                {   /* diagonal pin       */
+                                    /* try capture pinner */
+                                    if(y+RT==slider_pos) { Promo++; push_move_old(z,y+RT); }
+                                    if(y+LT==slider_pos) { Promo++; push_move_old(z,y+LT); }
+                                }
+                            } else
+                                if(index_to_capt_code[pinned_piece_index]&DIR_TO_CAPT_CODE[slider_pos-king_pos]&C_DISTANT)
+                                {   /* slider moves along pin ray */
+                                    int y = pinned_pos;
+                                    do{ /* moves upto capt. pinner*/
+                                        y += check_dir;
+                                        push_move_old(z,y);
+                                    } while(y != slider_pos);
+                                    y = pinned_pos;
+                                    while((y-=check_dir) != king_pos)
+                                    {   /* moves towards King     */
+                                        push_move_old(z,y);
                                     }
-                            }
+                                }
                         }
                     }
                 }
@@ -919,7 +922,7 @@ path[d] = stack[i];
             Index += (CasRights << 4) +color*919581;
             if(depth>2) {
               path[d] = stack[i];
-              if(true || depth > 7) { // the count will not fit in 32 bits
+              if(true/*change to || for large entries only ->*/ && depth > 7) { // the count will not fit in 32 bits
                  if(depth > 9) {
                    int i = HashSection, j = depth-9;
                    while(j--) i >>= 1;
@@ -980,7 +983,7 @@ minor:
                 perft(other_color(color), stack[i], depth-1, d+1);
                 if(HashFlag)
                 {
-                    if(true || depth > 7) { //large entry
+                    if(true/*change to || for large entries only ->*/ && depth > 7) { //large entry
                         Bucket->l.Signature1 = HighKey;
                         Bucket->l.Signature2 = HashKey;
                         Bucket->l.longCount  = count - SavCnt;
