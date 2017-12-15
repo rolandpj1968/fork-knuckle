@@ -419,6 +419,12 @@ clock_t ttt[30];
     // @return true iff the given square is empty
     bool is_empty(const int pos) const { return board[pos] == DUMMY; }
 
+    // @return true iff the given piece is of the given color.
+    static bool is_color(const int color, const int piece) { return piece & color; }
+    
+    // @return true iff the target square is open or opposition (to take).
+    bool can_move_to(const int color, const int to) const { return !is_color(color, board[to]); }
+
     // For sliders this is not a strong enough check to ensure the piece can get through to
     //   the target position - we still have to check that no other pieces are sitting in-between.
     // @return true iff the given piece is attacking/defending the target position,
@@ -430,7 +436,9 @@ clock_t ttt[30];
     }
 
     // @return true iff the given non-slider piece is attacking (or defending) the target position.
-    bool is_attacking_non_slider(const int piece_index, const int piece_pos, const int target_pos) const { return is_attacking_weak(piece_index, piece_pos, target_pos); }
+    bool is_attacking_non_slider(const int piece_index, const int piece_pos, const int target_pos) const {
+        return is_attacking_weak(piece_index, piece_pos, target_pos);
+    }
 
     // @return true iff the given slider piece is attacking (or defending) the target position.
     bool is_attacking_slider(const int slider_index, const int slider_pos, const int target_pos) const {
@@ -444,11 +452,6 @@ clock_t ttt[30];
         return false;
     }
     
-    // @return true iff the target square is open or opposition (to take).
-    bool can_move_to(const int color, int to) {
-        return !(board[to]&color);
-    }
-
     // Generate one move if to square is available (empty or opponent).
     // @return occupant of target square (for slider loops)
     void maybe_gen_move_to(const int color, int from_pos, int to) {
@@ -470,14 +473,24 @@ clock_t ttt[30];
 
     // @return the opposite color.
     static int other_color(const int color) { return COLOR ^ color; }
-    
+
+    // @return the position of the next non-empty square along the ray from the given starting position (exclusive) - could be off-board guard.
+    int next_nonempty(const int pos, const int dir) const {
+        int ray_pos = pos + dir;
+        while(is_empty(ray_pos)) { ray_pos += dir; }
+        return ray_pos;
+    }
+
+    long n_pincheck_calls = 0;
+    long n_pincheck_sliders = 0;
+    long n_pincheck_checks = 0;
     
     // All pinned pieces are removed from lists.
     // All their remaining legal moves are generated.
     // All distant checks are detected.
-    void gen_pincheck_moves(const int color, CheckData& check_data, int pstack[], int ppos[], int& psp) {
+    void gen_pincheck_moves(const int color, CheckData& check_data, int pstack[], int ppos[], int& psp) { n_pincheck_calls++;
         /* Some general preparation */
-        int k = king_pos(color);            /* position of my King */
+        int king_pos = this->king_pos(color);
         int forward = forward_dir(color);   /* forward step */
         int rank = 0x58 - (forward>>1);     /* 4th/5th rank */
         int prank = 0xD0 - 5*(color>>1);    /* 2nd/7th rank */
@@ -486,35 +499,35 @@ clock_t ttt[30];
         // If aiming at King & 1 piece of us in between, park this piece
         //   on pin stack for rest of move generation, after generating its
         //   moves along the pin line.
-        FOREACH_SLIDER(other_color(color), {
-                if(DIR_TO_CAPT_CODE[slider_pos-k]&index_to_capt_code[slider_index]&C_DISTANT)
-                {   /* slider aimed at our king */
-                    int v = delta_vec[slider_pos-k];
-                    int x = k;     /* trace ray from our King */
-                    int m; while((m=board[x+=v]) == DUMMY);
-                    if(x==slider_pos) {
-                        // Distant check detected
-                        check_data.add_distant_check(slider_pos, v);
-                    } else
-                        if(m&color)
-                        {   /* first on ray from King is ours */
-                            int y = x;
-                            while(board[y+=v] == DUMMY);
+        FOREACH_SLIDER(other_color(color), { n_pincheck_sliders++;
+                if(DIR_TO_CAPT_CODE[slider_pos-king_pos]&index_to_capt_code[slider_index]&C_DISTANT) { n_pincheck_checks++;
+                    // Slider aimed at our king.
+                    int check_dir = delta_vec[slider_pos-king_pos];
+                    int pinned_pos = next_nonempty(king_pos, check_dir);
+
+                    if(pinned_pos == slider_pos) {
+                        // Distant check detected - we walked all the way to the opposition slider.
+                        check_data.add_distant_check(slider_pos, check_dir);
+                    } else {
+                        int pinned_piece = board[pinned_pos];
+                        if(is_color(color, pinned_piece)) {   // First on ray from King is ours.
+                            int y = pinned_pos;
+                            while(board[y+=check_dir] == DUMMY);
                             if(y==slider_pos)
-                            {   /* our piece at x is pinned!  */
+                            {   /* our piece at pinned_pos is pinned!  */
                                 /* remove from piece list     */
                                 /* and put on pin stack       */
-                                m -= WHITE;
-                                ppos[psp] = index_to_pos[m];
-                                index_to_pos[m] = 0;
-                                pstack[psp++] = m;
-                                int z = x<<8;
+                                pinned_piece -= WHITE;
+                                ppos[psp] = index_to_pos[pinned_piece];
+                                index_to_pos[pinned_piece] = 0;
+                                pstack[psp++] = pinned_piece;
+                                int z = pinned_pos<<8;
                                 
-                                if(index_to_kind[m]<3)
+                                if(index_to_kind[pinned_piece]<3)
                                 {   /* flag promotions */
-                                    if(!((prank^x)&0xF0)) z |= PROMO_SHIFTED;
-                                    y = x + forward; 
-                                    if(!(v&7)) /* Pawn along file */
+                                    if(!((prank^pinned_pos)&0xF0)) z |= PROMO_SHIFTED;
+                                    y = pinned_pos + forward; 
+                                    if(!(check_dir&7)) /* Pawn along file */
                                     {   /* generate non-captures  */
                                         if(!(board[y]&COLOR))
                                         {   push_move_old(z,y);
@@ -529,21 +542,22 @@ clock_t ttt[30];
                                         if(y+LT==slider_pos) { Promo++; push_move_old(z,y+LT); }
                                     }
                                 } else
-                                    if(index_to_capt_code[m]&DIR_TO_CAPT_CODE[slider_pos-k]&C_DISTANT)
+                                    if(index_to_capt_code[pinned_piece]&DIR_TO_CAPT_CODE[slider_pos-king_pos]&C_DISTANT)
                                     {   /* slider moves along pin ray */
-                                        y = x;
+                                        y = pinned_pos;
                                         do{ /* moves upto capt. pinner*/
-                                            y += v;
+                                            y += check_dir;
                                             push_move_old(z,y);
                                         } while(y != slider_pos);
-                                        y = x;
-                                        while((y-=v) != k)
+                                        y = pinned_pos;
+                                        while((y-=check_dir) != king_pos)
                                         {   /* moves towards King     */
                                             push_move_old(z,y);
                                         }
                                     }
                             }
                         }
+                    }
                 }
             });
         // All pinned pieces are now removed from lists.
@@ -629,23 +643,23 @@ clock_t ttt[30];
         int mask = color|0x80;              // own color, empty square, or guard
 
         FOREACH_PAWN(color, {
-            int z = pawn_pos<<8;
+                int z = pawn_pos<<8;
 
-            /* flag promotions */
-            if(is_promo_rank(color, pawn_pos)) { Promo++; z |= PROMO_SHIFTED; }
-
-            /* capture moves */
-            int pawn_pos_fw = pawn_pos + forward;
-            if(!(board[pawn_pos_fw+LT]&mask)) push_move_old(z,pawn_pos_fw+LT);
-            if(!(board[pawn_pos_fw+RT]&mask)) push_move_old(z,pawn_pos_fw+RT);
-            
-            /* non-capture moves */
-            if(!(board[pawn_pos_fw]&COLOR))
-            {   push_move_old(z,pawn_pos_fw);
-                pawn_pos_fw += forward;
-                if(!((board[pawn_pos_fw]&COLOR) | ((rank^pawn_pos_fw)&0xF0)))
-                    push_move_old(z,pawn_pos_fw|pawn_pos_fw<<MODE_SHIFT);        // e.p. flag
-            }
+                // Flag promotions.
+                if(is_promo_rank(color, pawn_pos)) { Promo++; z |= PROMO_SHIFTED; }
+                
+                // Capture moves.
+                int pawn_pos_fw = pawn_pos + forward;
+                if(!(board[pawn_pos_fw+LT]&mask)) push_move_old(z,pawn_pos_fw+LT);
+                if(!(board[pawn_pos_fw+RT]&mask)) push_move_old(z,pawn_pos_fw+RT);
+                
+                // Non-capture moves.
+                if(!(board[pawn_pos_fw]&COLOR))
+                {   push_move_old(z,pawn_pos_fw);
+                    pawn_pos_fw += forward;
+                    if(!((board[pawn_pos_fw]&COLOR) | ((rank^pawn_pos_fw)&0xF0)))
+                        push_move_old(z,pawn_pos_fw|pawn_pos_fw<<MODE_SHIFT);        // e.p. flag
+                }
             });
     }
 
@@ -687,20 +701,20 @@ clock_t ttt[30];
     // Remove moves that don't solve distant check by capturing checker or interposing on check ray.
     void remove_illegal_moves(const int color, int first_move, CheckData& check_data) {
         if(check_data.in_check) {
-            int k = king_pos(color);           // King position.
-            for(int i=first_move; i<msp; i++) { // Go through all moves.
-                int j = stack[i]&0xFF;          // To position.
+            int king_pos = this->king_pos(color);    // King position.
+            for(int i = first_move; i < msp; i++) {  // Go through all moves.
+                int to = stack[i]&0xFF;              // To position.
                 
-                if(delta_vec[j-k] != check_data.check_dir) {
+                if(delta_vec[to-king_pos] != check_data.check_dir) {
                     stack[i--] = stack[--msp]; // Note, re-orders list. - we could compact in order instead.
                 } else {
                     // On check ray, could block or capture checker.
-                    int x = k;
+                    int x = king_pos;
                     do{
                         x += check_data.check_dir;
-                        if(x==j) break;
+                        if(x==to) break;
                     } while(x != check_data.checker);
-                    if(x!=j) {  stack[i--] = stack[--msp]; }
+                    if(x!=to) {  stack[i--] = stack[--msp]; }
                 }
             }
         }
@@ -961,7 +975,6 @@ minor:
             if(depth == 1 ) {
                 nodecount++;
                 count++;
-                //if(count < 280) pboard(board, 12, 0);
             }
             else {
                 perft(other_color(color), stack[i], depth-1, d+1);
@@ -1086,7 +1099,8 @@ void doit(int Dep, int color, int split) {
         for(int j=0; j<10; j++) accept[j] = reject[j] = 0, ttt[j] = t;
         perft(color, last_move, i, 1);
         t = clock()-t;
-        printf("perft(%2d)= %12lld (%6.3f sec)\n", i, count, t*(1./CLOCKS_PER_SEC));
+        //printf("perft(%2d)= %12lld (%6.3f sec)\n", i, count, t*(1./CLOCKS_PER_SEC));
+        printf("perft(%2d)= %12lld (%6.3f sec)         npinch %ld, npinchs %ld, npinchc %ld\n", i, count, t*(1./CLOCKS_PER_SEC), n_pincheck_calls, n_pincheck_sliders, n_pincheck_checks);
         if(HashFlag) {
             for(int j=0; j<10; j++) {
                 //printf("    depth %2d: accept %12ld reject %12ld (%6.4lf)\n", j, accept[j], reject[j], (double)accept[j]/reject[j]);
