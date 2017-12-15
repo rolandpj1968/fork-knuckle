@@ -473,15 +473,15 @@ clock_t ttt[30];
     
     // Generate one move if to square is available (empty or opponent).
     // @return occupant of target square (for slider loops)
-    void maybe_gen_move_to_new(const int color, int from_pos, int to) {
+    void maybe_gen_move_to(const int color, int from_pos, int to) {
         if(can_move_to(color, to)) {
             push_move(from_pos, to);
         }
     }
 
     // Generate one move if to square is available (empty or opponent).
-    void maybe_gen_move_new(const int color, int from_pos, int dir) {
-        maybe_gen_move_to_new(color, from_pos, from_pos + dir);
+    void maybe_gen_move(const int color, int from_pos, int dir) {
+        maybe_gen_move_to(color, from_pos, from_pos + dir);
     }
 
     // Forward direction for this color - just a handy trick to get FW/BW, i.e. +/- 0x10.
@@ -555,7 +555,7 @@ clock_t ttt[30];
                                 if(!(check_dir&7)) /* Pawn along file */
                                 {   /* generate non-captures  */
                                     if(is_unoccupied(y))
-                                    {   push_move_old(z,y);
+                                    {   push_move(pinned_pos, y); //push_move_old(z,y);
                                         y += forward;Promo++;
                                         if(!((board[y]&COLOR) | ((rank^y)&0xF0)))
                                             push_move_old(z,y|y<<MODE_SHIFT);
@@ -649,14 +649,14 @@ clock_t ttt[30];
         // Knights
         FOREACH_KNIGHT(color, {
                 if(is_attacking_non_slider(knight_index, knight_pos, checker_pos)) {
-                    push_move_old(knight_pos<<8, checker_pos);
+                    push_move(knight_pos, checker_pos);
                 }
             });
 
         // Sliders
         FOREACH_SLIDER(color, {
                 if(is_attacking_slider(slider_index, slider_pos, checker_pos)) {
-                    push_move_old(slider_pos<<8, checker_pos);
+                    push_move(slider_pos, checker_pos);
                 }
             });
     }
@@ -690,7 +690,7 @@ clock_t ttt[30];
 
     // All knight moves.
     void gen_knight_moves(const int color) {
-#       define M(dir) maybe_gen_move_new(color, knight_pos, (dir))
+#       define M(dir) maybe_gen_move(color, knight_pos, (dir))
         FOREACH_KNIGHT(color, {
                 // All 8 knight directions.
                 M(FRR); M(FFR); M(FFL); M(FLL); M(BLL); M(BBL); M(BBR); M(BRR);
@@ -703,7 +703,7 @@ clock_t ttt[30];
 #define M(dir) do { \
             int to = slider_pos; \
             do { \
-                to += dir; maybe_gen_move_to_new(color, slider_pos, to); \
+                to += dir; maybe_gen_move_to(color, slider_pos, to); \
             } while(!is_occupied(to)); \
         } while(false)
             
@@ -762,7 +762,7 @@ clock_t ttt[30];
     void gen_king_moves(const int color) {
         const int king_pos = this->king_pos(color); // King position
 
-#       define M(dir) maybe_gen_move_new(color, king_pos, dir)
+#       define M(dir) maybe_gen_move(color, king_pos, dir)
         // All 8 directions - we will check legality when making the move.
         M(RT); M(FR); M(FW); M(FL); M(LT); M(BL); M(BW); M(BR);
 #       undef M
