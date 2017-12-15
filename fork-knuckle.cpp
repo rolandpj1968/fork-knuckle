@@ -473,19 +473,6 @@ clock_t ttt[30];
     
     // Generate one move if to square is available (empty or opponent).
     // @return occupant of target square (for slider loops)
-    void maybe_gen_move_to(const int color, int from_pos, int to) {
-        if(can_move_to(color, to)) {
-            push_move_old((from_pos << 8), to);
-        }
-    }
-
-    // Generate one move if to square is available (empty or opponent).
-    void maybe_gen_move(const int color, int from_pos, int dir) {
-        maybe_gen_move_to(color, from_pos, from_pos + dir);
-    }
-
-    // Generate one move if to square is available (empty or opponent).
-    // @return occupant of target square (for slider loops)
     void maybe_gen_move_to_new(const int color, int from_pos, int to) {
         if(can_move_to(color, to)) {
             push_move(from_pos, to);
@@ -716,7 +703,7 @@ clock_t ttt[30];
 #define M(dir) do { \
             int to = slider_pos; \
             do { \
-                to += dir; maybe_gen_move_to(color, slider_pos, to); \
+                to += dir; maybe_gen_move_to_new(color, slider_pos, to); \
             } while(!is_occupied(to)); \
         } while(false)
             
@@ -775,7 +762,7 @@ clock_t ttt[30];
     void gen_king_moves(const int color) {
         const int king_pos = this->king_pos(color); // King position
 
-#       define M(dir) maybe_gen_move(color, king_pos, dir)
+#       define M(dir) maybe_gen_move_new(color, king_pos, dir)
         // All 8 directions - we will check legality when making the move.
         M(RT); M(FR); M(FW); M(FL); M(LT); M(BL); M(BW); M(BR);
 #       undef M
