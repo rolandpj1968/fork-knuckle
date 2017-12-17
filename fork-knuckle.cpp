@@ -364,13 +364,6 @@ clock_t ttt[30];
     // Push a pawn move to the move stack - and add promo flag where required.
     // Bogus cos of already shifted from. Ugh!
     void push_pawn_move(const int color, const int from, const int to) { push_move(from, to, promo_mode_for(color, from)); }
-        
-    //     if(is_promo_rank(color, from)) {
-    //         Promo++;
-    //         from |= PROMO_SHIFTED;
-    //     }
-    //     push_move_old(from, to);
-    // }
 
     // @return Base index for the color.
     static int base_index(const int color) { return color-WHITE; }
@@ -450,6 +443,9 @@ clock_t ttt[30];
 
     // @return true iff the given square is empty
     bool is_empty(const int pos) const { return board[pos] == DUMMY; }
+
+    // @return true iff the given square is capturable by us.
+    bool is_capturable(const int color, const int pos) const { return !(board[pos] & (color|0x80)); }
 
     // @return true iff the given piece is of the given color.
     static bool is_color(const int color, const int piece) { return piece & color; }
@@ -636,14 +632,20 @@ clock_t ttt[30];
         if((board[x]&mask)==mask) push_move_old(x<<8,(ep_flag^0x10)|EP_SHIFTED);
     }
 
-    // @return promotion rank for the given color - 2nd for black and 7th for white.
-    static int promo_rank(const int color) { return 0xD0 - 5*(color>>1); }
-
     // @return true iff the given positions have the same rank
     static bool is_same_rank(const int pos1, const int pos2) { return !((pos1^pos2)&0xF0); }
     
     // @return promotion rank for the given color - 2nd for black and 7th for white.
+    static int promo_rank(const int color) { return 0xD0 - 5*(color>>1); }
+
+    // @return promotion rank for the given color - 2nd for black and 7th for white.
     static bool is_promo_rank(const int color, const int pos) { return is_same_rank(promo_rank(color), pos); }
+
+    // @return the en-passant rank for the given color - 4th for white, 5th for black.
+    static int ep_rank(const int color) { return 0x58 - (forward_dir(color) >> 1); }
+
+    // @return promotion rank for the given color - 2nd for black and 7th for white.
+    static bool is_ep_rank(const int color, const int pos) { return is_same_rank(ep_rank(color), pos); }
 
     // On contact check only King retreat or capture helps.
     // Use in that case specialized recapture generator.
@@ -685,8 +687,8 @@ clock_t ttt[30];
 
                 // Capture moves.
                 int pawn_pos_fw = pawn_pos + fw;
-                if(!(board[pawn_pos_fw+LT]&mask)) { push_move(pawn_pos, pawn_pos_fw+LT, mode); }
-                if(!(board[pawn_pos_fw+RT]&mask)) { push_move(pawn_pos, pawn_pos_fw+RT, mode); }
+                if(is_capturable(color, pawn_pos+fw+LT)) { push_pawn_move(pawn_pos, pawn_pos+fw+LT, mode); }
+                if(is_capturable(color, pawn_pos+fw+RT)) { push_pawn_move(pawn_pos, pawn_pos+fw+RT, mode); }
                 
                 // Non-capture moves.
                 if(!(board[pawn_pos_fw]&COLOR)) {
