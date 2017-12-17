@@ -358,7 +358,20 @@ clock_t ttt[30];
 
     // Push a special-mode move.
     void push_move(const int from_pos, const int to_pos, const int mode) { stack[msp++] = mk_move(from_pos, to_pos, mode); }
+
+    static int promo_mode_for(const int color, const int pawn_pos) { return is_promo_rank(color, pawn_pos) ? PROMO_MODE : 0; }
     
+    // Push a pawn move to the move stack - and add promo flag where required.
+    // Bogus cos of already shifted from. Ugh!
+    void push_pawn_move(const int color, const int from, const int to) { push_move(from, to, promo_mode_for(color, from)); }
+        
+    //     if(is_promo_rank(color, from)) {
+    //         Promo++;
+    //         from |= PROMO_SHIFTED;
+    //     }
+    //     push_move_old(from, to);
+    // }
+
     // @return Base index for the color.
     static int base_index(const int color) { return color-WHITE; }
     
@@ -554,16 +567,16 @@ clock_t ttt[30];
                                 if(!(check_dir&7)) { // Pawn along file
                                     // Generate non-captures.
                                     if(is_unoccupied(pinned_pos_fw)) {
-                                        push_move(pinned_pos, pinned_pos_fw, mode);
-                                        pinned_pos_fw += fw;Promo++;
-                                        if(!((board[pinned_pos_fw]&COLOR) | ((rank^pinned_pos_fw)&0xF0))) {
+                                        push_pawn_move(color, pinned_pos, pinned_pos_fw);
+                                        pinned_pos_fw += fw; Promo++;
+                                        if(is_unoccupied(pinned_pos_fw) && !((rank^pinned_pos_fw)&0xF0)) {
                                             push_move(pinned_pos, pinned_pos_fw, mode | pinned_pos_fw); // en-passant mode
                                         }
                                     }
                                 } else {
                                     // Diagonal pin - generate pawn captures, if possible.
-                                    if(pinned_pos_fw+RT==slider_pos) { Promo++; push_move(pinned_pos, pinned_pos_fw+RT, mode); /*push_move_old(z,pinned_pos_fw+RT);*/ }
-                                    if(pinned_pos_fw+LT==slider_pos) { Promo++; push_move(pinned_pos, pinned_pos_fw+LT, mode); /*push_move_old(z,pinned_pos_fw+LT);*/ }
+                                    if(pinned_pos_fw+RT == slider_pos) { push_pawn_move(color, pinned_pos, pinned_pos_fw+RT); }
+                                    if(pinned_pos_fw+LT == slider_pos) { push_pawn_move(color, pinned_pos, pinned_pos_fw+LT); }
                                 }
                             } else
                                 if(index_to_capt_code[pinned_piece_index]&DIR_TO_CAPT_CODE[slider_pos-king_pos]&C_DISTANT) {
@@ -636,14 +649,14 @@ clock_t ttt[30];
     // Use in that case specialized recapture generator.
     void gen_piece_moves_in_contact_check(const int color, int checker_pos) {
         // Check for pawns - can only be 2.
-        int backward = backward_dir(color);
+        int bw = backward_dir(color);
         int checker_pos_with_mode = checker_pos;
-        if(is_promo_rank(color, checker_pos + backward)) Promo++,checker_pos_with_mode |= PROMO_SHIFTED; // Bug - promo should only ++ if this finds a move, and possible ++ twice, once for each pawn
+        if(is_promo_rank(color, checker_pos + bw)) Promo++,checker_pos_with_mode |= PROMO_SHIFTED; // Bug - promo should only ++ if this finds a move, and possible ++ twice, once for each pawn
 
         // I have no idea what the extra second condition is here - it looks trivially true, but empirically is required.
         // Maybe something to do with pinned piece elimination? Ah, yes. Pinned pieces are removed from the pieces list, but not from the board!
-        if(is_pawn(color, checker_pos+backward+LT) && index_to_pos[board[checker_pos+backward+LT]-WHITE]) { push_move_old((checker_pos+backward+LT) << 8, checker_pos_with_mode); }
-        if(is_pawn(color, checker_pos+backward+RT) && index_to_pos[board[checker_pos+backward+RT]-WHITE]) { push_move_old((checker_pos+backward+RT) << 8, checker_pos_with_mode); }
+        if(is_pawn(color, checker_pos+bw+LT) && index_to_pos[board[checker_pos+bw+LT]-WHITE]) { push_move_old((checker_pos+bw+LT) << 8, checker_pos_with_mode); }
+        if(is_pawn(color, checker_pos+bw+RT) && index_to_pos[board[checker_pos+bw+RT]-WHITE]) { push_move_old((checker_pos+bw+RT) << 8, checker_pos_with_mode); }
 
         // Knights
         FOREACH_KNIGHT(color, {
@@ -667,7 +680,6 @@ clock_t ttt[30];
         int mask = color|0x80;              // own color, empty square, or guard
 
         FOREACH_PAWN(color, {
-                int z = pawn_pos<<8;
                 // Flag promotions.
                 int mode = 0; if(is_promo_rank(color, pawn_pos)) { mode = PROMO_MODE; }
 
@@ -678,7 +690,7 @@ clock_t ttt[30];
                 
                 // Non-capture moves.
                 if(!(board[pawn_pos_fw]&COLOR)) {
-                    push_move(pawn_pos, pawn_pos_fw, mode); //push_move_old(z,pawn_pos_fw);
+                    push_move(pawn_pos, pawn_pos_fw, mode);
                     pawn_pos_fw += fw;
                     if(!((board[pawn_pos_fw]&COLOR) | ((rank^pawn_pos_fw)&0xF0))) {
                         push_move(pawn_pos, pawn_pos_fw, mode | pawn_pos_fw);        // e.p. flag
