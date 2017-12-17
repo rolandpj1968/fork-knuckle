@@ -362,8 +362,10 @@ clock_t ttt[30];
     static int promo_mode_for(const int color, const int pawn_pos) { return is_promo_rank(color, pawn_pos) ? PROMO_MODE : 0; }
     
     // Push a pawn move to the move stack - and add promo flag where required.
-    // Bogus cos of already shifted from. Ugh!
     void push_pawn_move(const int color, const int from, const int to) { push_move(from, to, promo_mode_for(color, from)); }
+
+    // Push a pawn move to the move stack - and add promo flag where required.
+    void push_ep_pawn_move(const int color, const int from, const int to) { push_move(from, to, (promo_mode_for(color, from) | to)); }
 
     // @return Base index for the color.
     static int base_index(const int color) { return color-WHITE; }
@@ -687,14 +689,14 @@ clock_t ttt[30];
 
                 // Capture moves.
                 int pawn_pos_fw = pawn_pos + fw;
-                if(is_capturable(color, pawn_pos+fw+LT)) { push_pawn_move(pawn_pos, pawn_pos+fw+LT, mode); }
-                if(is_capturable(color, pawn_pos+fw+RT)) { push_pawn_move(pawn_pos, pawn_pos+fw+RT, mode); }
+                if(is_capturable(color, pawn_pos+fw+LT)) { push_pawn_move(color, pawn_pos, pawn_pos+fw+LT); }
+                if(is_capturable(color, pawn_pos+fw+RT)) { push_pawn_move(color, pawn_pos, pawn_pos+fw+RT); }
                 
                 // Non-capture moves.
-                if(!(board[pawn_pos_fw]&COLOR)) {
-                    push_move(pawn_pos, pawn_pos_fw, mode);
+                if(is_unoccupied(pawn_pos+fw)) {
+                    push_pawn_move(color, pawn_pos, pawn_pos+fw);
                     pawn_pos_fw += fw;
-                    if(!((board[pawn_pos_fw]&COLOR) | ((rank^pawn_pos_fw)&0xF0))) {
+                    if(is_unoccupied(pawn_pos+fw+fw) && is_ep_rank(color, pawn_pos+fw+fw)) {
                         push_move(pawn_pos, pawn_pos_fw, mode | pawn_pos_fw);        // e.p. flag
                     }
                 }
