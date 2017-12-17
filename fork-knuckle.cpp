@@ -529,20 +529,19 @@ clock_t ttt[30];
         FOREACH_SLIDER(other_color(color), { n_pincheck_sliders++;
                 if(is_on_slider_ray(king_pos, slider_pos, slider_index)) { n_pincheck_checks++;
                     // Slider aimed at our king.
-                    int check_dir = delta_vec[slider_pos-king_pos];
-                    int pinned_pos = next_nonempty(king_pos, check_dir);
+                    const int check_dir = delta_vec[slider_pos-king_pos];
+                    const int pinned_pos = next_nonempty(king_pos, check_dir);
 
                     if(pinned_pos == slider_pos) {
                         // Distant check detected - we walked all the way to the opposition slider.
                         check_data.add_distant_check(slider_pos, check_dir);
                     } else {
-                        int pinned_piece = board[pinned_pos];
+                        const int pinned_piece = board[pinned_pos];
                         if(is_color(color, pinned_piece)                             // First piece on ray from King is ours.
                            && next_nonempty(pinned_pos, check_dir) == slider_pos) {  // Next piece on ray is the enemy slider - we're pinned!
 
-                            /* remove from piece list     */
-                            /* and put on pin stack       */
-                            const int pinned_piece_index = pinned_piece - WHITE;
+                            // Remove from piece list and put on pin stack.
+                            const int pinned_piece_index = piece_to_index(pinned_piece);
                             ppos[psp] = index_to_pos[pinned_piece_index];
                             index_to_pos[pinned_piece_index] = 0;
                             pstack[psp++] = pinned_piece_index;
@@ -552,33 +551,32 @@ clock_t ttt[30];
                                 // Flag promotions.
                                 int mode = 0; if(is_promo_rank(color, pinned_pos)) { mode = PROMO_MODE; }
                                 int pinned_pos_fw = pinned_pos + fw; 
-                                if(!(check_dir&7)) /* Pawn along file */
-                                {   /* generate non-captures  */
-                                    if(is_unoccupied(pinned_pos_fw))
-                                    {   push_move(pinned_pos, pinned_pos_fw, mode); //push_move_old(z,pinned_pos_fw);
+                                if(!(check_dir&7)) { // Pawn along file
+                                    // Generate non-captures.
+                                    if(is_unoccupied(pinned_pos_fw)) {
+                                        push_move(pinned_pos, pinned_pos_fw, mode);
                                         pinned_pos_fw += fw;Promo++;
                                         if(!((board[pinned_pos_fw]&COLOR) | ((rank^pinned_pos_fw)&0xF0))) {
-                                            push_move(pinned_pos, pinned_pos_fw, mode | pinned_pos_fw); // push_move_old(z,pinned_pos_fw|pinned_pos_fw<<MODE_SHIFT); // en-passant mode
+                                            push_move(pinned_pos, pinned_pos_fw, mode | pinned_pos_fw); // en-passant mode
                                         }
                                     }
-                                } else
-                                {   /* diagonal pin       */
-                                    /* try capture pinner */
-                                    if(pinned_pos_fw+RT==slider_pos) { Promo++; push_move_old(z,pinned_pos_fw+RT); }
-                                    if(pinned_pos_fw+LT==slider_pos) { Promo++; push_move_old(z,pinned_pos_fw+LT); }
+                                } else {
+                                    // Diagonal pin - generate pawn captures, if possible.
+                                    if(pinned_pos_fw+RT==slider_pos) { Promo++; push_move(pinned_pos, pinned_pos_fw+RT, mode); /*push_move_old(z,pinned_pos_fw+RT);*/ }
+                                    if(pinned_pos_fw+LT==slider_pos) { Promo++; push_move(pinned_pos, pinned_pos_fw+LT, mode); /*push_move_old(z,pinned_pos_fw+LT);*/ }
                                 }
                             } else
-                                if(index_to_capt_code[pinned_piece_index]&DIR_TO_CAPT_CODE[slider_pos-king_pos]&C_DISTANT)
-                                {   /* slider moves along pin ray */
-                                    int y = pinned_pos;
-                                    do{ /* moves upto capt. pinner*/
-                                        y += check_dir;
-                                        push_move_old(z,y);
-                                    } while(y != slider_pos);
-                                    y = pinned_pos;
-                                    while((y-=check_dir) != king_pos)
-                                    {   /* moves towards King     */
-                                        push_move_old(z,y);
+                                if(index_to_capt_code[pinned_piece_index]&DIR_TO_CAPT_CODE[slider_pos-king_pos]&C_DISTANT) {
+                                    // Slider moves along pin ray */
+                                    int to_pos = pinned_pos;
+                                    do { // Moves up to capturing pinner.
+                                        to_pos += check_dir;
+                                        push_move(pinned_pos, to_pos);
+                                    } while(to_pos != slider_pos);
+                                    to_pos = pinned_pos;
+                                    while((to_pos-=check_dir) != king_pos) {
+                                        // Moves towards King.
+                                        push_move(pinned_pos, to_pos);
                                     }
                                 }
                         }
