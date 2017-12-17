@@ -365,7 +365,7 @@ clock_t ttt[30];
     void push_pawn_move(const int color, const int from, const int to) { push_move(from, to, promo_mode_for(color, from)); }
 
     // Push a pawn move to the move stack - and add promo flag where required.
-    void push_ep_pawn_move(const int color, const int from, const int to) { push_move(from, to, (promo_mode_for(color, from) | to)); }
+    void push_ep_pawn_move(const int from, const int to) { push_move(from, to, to); }
 
     // @return Base index for the color.
     static int base_index(const int color) { return color-WHITE; }
@@ -697,7 +697,8 @@ clock_t ttt[30];
                     push_pawn_move(color, pawn_pos, pawn_pos+fw);
                     pawn_pos_fw += fw;
                     if(is_unoccupied(pawn_pos+fw+fw) && is_ep_rank(color, pawn_pos+fw+fw)) {
-                        push_move(pawn_pos, pawn_pos_fw, mode | pawn_pos_fw);        // e.p. flag
+                        //push_move(pawn_pos, pawn_pos_fw, mode | pawn_pos_fw);        // e.p. flag
+                        push_ep_pawn_move(pawn_pos, pawn_pos+fw+fw);
                     }
                 }
             });
