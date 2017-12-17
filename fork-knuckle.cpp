@@ -548,23 +548,25 @@ clock_t ttt[30];
                             pstack[psp++] = pinned_piece_index;
                             int z = pinned_pos<<8;
                             
-                            if(index_to_kind[pinned_piece_index]<3)
-                            {   /* flag promotions */
-                                if(!((prank^pinned_pos)&0xF0)) z |= PROMO_SHIFTED;
-                                int y = pinned_pos + forward; 
+                            if(is_pawn_piece_index(pinned_piece_index)/*index_to_kind[pinned_piece_index] < KNIGHT_KIND*/) {
+                                // Flag promotions.
+                                int mode = 0; if(is_promo_rank(color, pinned_pos)) { mode = PROMO_MODE; } //!((prank^pinned_pos)&0xF0)) { mode = PROMO_MODE; }
+                                //if(!((prank^pinned_pos)&0xF0)) z |= PROMO_SHIFTED;
+                                int pinned_pos_fw = pinned_pos + forward; 
                                 if(!(check_dir&7)) /* Pawn along file */
                                 {   /* generate non-captures  */
-                                    if(is_unoccupied(y))
-                                    {   push_move(pinned_pos, y); //push_move_old(z,y);
-                                        y += forward;Promo++;
-                                        if(!((board[y]&COLOR) | ((rank^y)&0xF0)))
-                                            push_move_old(z,y|y<<MODE_SHIFT);
+                                    if(is_unoccupied(pinned_pos_fw))
+                                    {   push_move(pinned_pos, pinned_pos_fw, mode); //push_move_old(z,pinned_pos_fw);
+                                        pinned_pos_fw += forward;Promo++;
+                                        if(!((board[pinned_pos_fw]&COLOR) | ((rank^pinned_pos_fw)&0xF0))) {
+                                            push_move(pinned_pos, pinned_pos_fw, mode | pinned_pos_fw); // push_move_old(z,pinned_pos_fw|pinned_pos_fw<<MODE_SHIFT); // en-passant mode
+                                        }
                                     }
                                 } else
                                 {   /* diagonal pin       */
                                     /* try capture pinner */
-                                    if(y+RT==slider_pos) { Promo++; push_move_old(z,y+RT); }
-                                    if(y+LT==slider_pos) { Promo++; push_move_old(z,y+LT); }
+                                    if(pinned_pos_fw+RT==slider_pos) { Promo++; push_move_old(z,pinned_pos_fw+RT); }
+                                    if(pinned_pos_fw+LT==slider_pos) { Promo++; push_move_old(z,pinned_pos_fw+LT); }
                                 }
                             } else
                                 if(index_to_capt_code[pinned_piece_index]&DIR_TO_CAPT_CODE[slider_pos-king_pos]&C_DISTANT)
@@ -632,7 +634,7 @@ clock_t ttt[30];
     
     // @return promotion rank for the given color - 2nd for black and 7th for white.
     static bool is_promo_rank(const int color, const int pos) { return is_same_rank(promo_rank(color), pos); }
-    
+
     // On contact check only King retreat or capture helps.
     // Use in that case specialized recapture generator.
     void gen_piece_moves_in_contact_check(const int color, int checker_pos) {
@@ -848,13 +850,17 @@ clock_t ttt[30];
         return (board[piece_pos] & pawn_mask) == pawn_mask;
     }
 
+    // @return true iff the piece of the given piece index is a pawn.
+    bool is_pawn_piece_index(const int piece_index) const { return index_to_kind[piece_index] < KNIGHT_KIND; }
+    
+
     // Full check for captures on square x by all opponent pieces.
     // Note that color is the color of the capturing piece.
     int capturable(const int color, const int piece_pos) {
          // Check for pawns - can only be two.
-        int backward = backward_dir(color);
-        if(is_pawn(color, piece_pos+backward+RT)) { return 1; }
-        if(is_pawn(color, piece_pos+backward+LT)) { return 2; }
+        int bw = backward_dir(color);
+        if(is_pawn(color, piece_pos+bw+RT)) { return 1; }
+        if(is_pawn(color, piece_pos+bw+LT)) { return 2; }
 
         // Check knights and opposition king.
         FOREACH_KNIGHT_OR_KING(color, {
