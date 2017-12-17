@@ -334,19 +334,6 @@ clock_t ttt[30];
         }
     };
 
-    // Push a move to the move stack - from already shifted and with sundry extra flags anywhere (Eeek!)
-    void push_move_old(const int from, const int to) { stack[msp++] = from | to; }
-
-    // Push a pawn move to the move stack - and add promo flag where required.
-    // Bogus cos of already shifted from. Ugh!
-    void push_pawn_move_old_bogus(const int color, int from, const int to) {
-        if(is_promo_rank(color, from)) {
-            Promo++;
-            from |= PROMO_SHIFTED;
-        }
-        push_move_old(from, to);
-    }
-
     // Contruct a move in integer representation with 'to' in the low byte and 'from' in the second lowest byte
     static int mk_move(const int from_pos, const int to_pos) { return (from_pos << FROM_SHIFT) | to_pos; }
 
@@ -663,13 +650,9 @@ clock_t ttt[30];
     void gen_piece_moves_in_contact_check(const int color, int checker_pos) {
         // Check for pawns - can only be 2.
         int bw = backward_dir(color);
-        int checker_pos_with_mode = checker_pos;
-        if(is_promo_rank(color, checker_pos + bw)) Promo++,checker_pos_with_mode |= PROMO_SHIFTED; // Bug - promo should only ++ if this finds a move, and possible ++ twice, once for each pawn
 
-        // I have no idea what the extra second condition is here - it looks trivially true, but empirically is required.
-        // Maybe something to do with pinned piece elimination? Ah, yes. Pinned pieces are removed from the pieces list, but not from the board!
-        if(is_pawn(color, checker_pos+bw+LT) && !is_pinned(checker_pos+bw+LT)/*index_to_pos[board[checker_pos+bw+LT]-WHITE]*/) { push_pawn_move(color, checker_pos+bw+LT, checker_pos); }
-        if(is_pawn(color, checker_pos+bw+RT) && index_to_pos[board[checker_pos+bw+RT]-WHITE]) { push_move_old((checker_pos+bw+RT) << 8, checker_pos_with_mode); }
+        if(is_pawn(color, checker_pos+bw+LT) && !is_pinned(checker_pos+bw+LT)) { push_pawn_move(color, checker_pos+bw+LT, checker_pos); }
+        if(is_pawn(color, checker_pos+bw+RT) && !is_pinned(checker_pos+bw+RT)) { push_pawn_move(color, checker_pos+bw+RT, checker_pos); }
 
         // Knights
         FOREACH_KNIGHT(color, {
