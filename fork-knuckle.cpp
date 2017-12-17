@@ -612,14 +612,14 @@ clock_t ttt[30];
     // Generate castling moves.
     void gen_castling_moves(const int color) {
         if(!(color&CasRights)) {
-            int k = king_pos(color);           // King position
+            int king_pos = this->king_pos(color);           // King position
             
-            if(!((board[k+RT]^DUMMY)|(board[k+RT+RT]^DUMMY)|
-                 (CasRights&color>>4)))
-                push_move_old(k<<8,k+2+0xB0000000+0x3000000);
-            if(!((board[k+LT]^DUMMY)|(board[k+LT+LT]^DUMMY)|(board[k+LT+LT+LT]^DUMMY)|
+            if(!((board[king_pos+RT]^DUMMY)|(board[king_pos+RT+RT]^DUMMY)|
+                 (CasRights&(color>>4))))
+                push_move_old(king_pos<<8,king_pos+2+0xB0000000+0x3000000);
+            if(!((board[king_pos+LT]^DUMMY)|(board[king_pos+LT+LT]^DUMMY)|(board[king_pos+LT+LT+LT]^DUMMY)|
                  (CasRights&color>>2)))
-                push_move_old(k<<8,k-2+0xB0000000-0x4000000);
+                push_move_old(king_pos<<8,king_pos-2+0xB0000000-0x4000000);
         }
     }
 
@@ -680,13 +680,8 @@ clock_t ttt[30];
     // All pawn moves.
     void gen_pawn_moves(const int color) {
         int fw = forward_dir(color);   // forward step
-        int rank = 0x58 - (fw>>1);     // 4th/5th rank
-        int mask = color|0x80;              // own color, empty square, or guard
 
         FOREACH_PAWN(color, {
-                // Flag promotions.
-                int mode = 0; if(is_promo_rank(color, pawn_pos)) { mode = PROMO_MODE; }
-
                 // Capture moves.
                 int pawn_pos_fw = pawn_pos + fw;
                 if(is_capturable(color, pawn_pos+fw+LT)) { push_pawn_move(color, pawn_pos, pawn_pos+fw+LT); }
@@ -695,9 +690,7 @@ clock_t ttt[30];
                 // Non-capture moves.
                 if(is_unoccupied(pawn_pos+fw)) {
                     push_pawn_move(color, pawn_pos, pawn_pos+fw);
-                    pawn_pos_fw += fw;
                     if(is_unoccupied(pawn_pos+fw+fw) && is_ep_rank(color, pawn_pos+fw+fw)) {
-                        //push_move(pawn_pos, pawn_pos_fw, mode | pawn_pos_fw);        // e.p. flag
                         push_ep_pawn_move(pawn_pos, pawn_pos+fw+fw);
                     }
                 }
