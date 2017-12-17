@@ -609,26 +609,35 @@ clock_t ttt[30];
         }
     }
 
+    // @return true iff the given color can still castle (at least on side).
+    bool has_castling_rights(const int color) const { return !(CasRights & color); }
+
+    // @return true iff the given color can still castle (at least on side).
+    bool has_castling_rights_kingside(const int color) const { return !(CasRights & (color >> 4)); }
+
+    // @return true iff the given color can still castle (at least on side).
+    bool has_castling_rights_queenside(const int color) const { return !(CasRights & (color >> 2)); }
+
     // Generate castling moves.
     void gen_castling_moves(const int color) {
-        if(!(color&CasRights)) {
+        if(has_castling_rights(color)) {
             int king_pos = this->king_pos(color);           // King position
-            
-            if(!((board[king_pos+RT]^DUMMY)|(board[king_pos+RT+RT]^DUMMY)|
-                 (CasRights&(color>>4))))
-                push_move_old(king_pos<<8,king_pos+2+0xB0000000+0x3000000);
-            if(!((board[king_pos+LT]^DUMMY)|(board[king_pos+LT+LT]^DUMMY)|(board[king_pos+LT+LT+LT]^DUMMY)|
-                 (CasRights&color>>2)))
-                push_move_old(king_pos<<8,king_pos-2+0xB0000000-0x4000000);
+
+            if(has_castling_rights_kingside(color) && is_empty(king_pos+RT) && is_empty(king_pos+RT+RT)) {
+                push_move(king_pos, king_pos+RT+RT, 0xB0 + 0x03);
+            }
+            if(has_castling_rights_queenside(color) && is_empty(king_pos+LT) && is_empty(king_pos+LT+LT) && is_empty(king_pos+LT+LT+LT)) {
+                push_move(king_pos, king_pos+LT+LT, 0xB0 - 0x04);
+            }
         }
     }
 
     // Generate en-passant captures (at most two)
-    void gen_ep_moves(const int color, int ep_flag) {
+    void gen_ep_captures(const int color, int ep_flag) {
         int mask = color | PAWNS_INDEX; // Is this index?
 
         int x = ep_flag+1;
-        if((board[x]&mask)==mask) push_move_old(x<<8,(ep_flag^0x10)|EP_SHIFTED);
+        if(is_pawn(color, x)/*(board[x]&mask)==mask*/) push_move_old(x<<8,(ep_flag^0x10)|EP_SHIFTED);
 
         x = ep_flag-1;
         if((board[x]&mask)==mask) push_move_old(x<<8,(ep_flag^0x10)|EP_SHIFTED);
@@ -827,7 +836,7 @@ clock_t ttt[30];
 
             // Generate en-passant captures (at most two).
             if(!check_data.in_check || check_data.checker == ep_flag) {
-                gen_ep_moves(color, ep_flag);
+                gen_ep_captures(color, ep_flag);
             }
         
             ep2 = msp; // Save end of en-passant/castling moves.
