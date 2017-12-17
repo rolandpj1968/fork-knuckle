@@ -334,6 +334,10 @@ clock_t ttt[30];
         }
     };
 
+    static int move_to(const int move) { return move & 0xFF; }
+    static int move_from(const int move) { return (move >> FROM_SHIFT) & 0xFF; }
+    static int move_mode(const int move) { return (move >> MODE_SHIFT) & 0xFF; }
+
     // Contruct a move in integer representation with 'to' in the low byte and 'from' in the second lowest byte
     static int mk_move(const int from_pos, const int to_pos) { return (from_pos << FROM_SHIFT) | to_pos; }
 
@@ -589,7 +593,7 @@ clock_t ttt[30];
     // Determine if there is a contact check - there can only be one and it must be the last piece moved.
     void get_contact_check(const int color, int last_move, CheckData& check_data) {
         int king_pos = this->king_pos(color);
-        int last_to = last_move & 0xFF;
+        int last_to = move_to(last_move);
 
         if(DIR_TO_CAPT_CODE[king_pos - last_to] & index_to_capt_code[board[last_to]-WHITE] & C_CONTACT) {
             check_data.add_contact_checker(last_to, delta_vec[last_to - king_pos]);
@@ -729,7 +733,7 @@ clock_t ttt[30];
         if(check_data.in_check) {
             int king_pos = this->king_pos(color);    // King position.
             for(int i = first_move; i < msp; i++) {  // Go through all moves.
-                int to = stack[i]&0xFF;              // To position.
+                int to = move_to(stack[i]);              // To position.
                 
                 if(delta_vec[to-king_pos] != check_data.check_dir) {
                     stack[i--] = stack[--msp]; // Note, re-orders list. - we could compact in order instead.
@@ -788,12 +792,12 @@ clock_t ttt[30];
         }
     }
 
-        // This seems to be a pseudo-move generator (but check).
+    // This seems to be a pseudo-move generator (but check).
     // It seems like we reject move-into-check (king capturable) when making the move.
     void gen_moves2(const int color, int last_move, int d) {
         CheckData check_data;
         int pstack[12], ppos[12], psp=0, first_move=msp;
-        int ep_pos = last_move>>MODE_SHIFT&0xFF;
+        int ep_pos = move_mode(last_move);
         ep1 = ep2 = msp; Promo = 0;
 
         // Pinned-piece moves and non-contact check detection.
@@ -891,9 +895,9 @@ void perft(const int color, int last_move, int depth, int d)
     for(i = first_move; i<msp; i++)  /* go through all moves */
     {
       /* fetch move from move stack */
-        from = (stack[i]>>8)&0xFF;
-        to = capt = stack[i]&0xFF;
-        mode = (unsigned int)stack[i]>>MODE_SHIFT;
+        from = move_from(stack[i]);
+        to = capt = move_to(stack[i]);
+        mode = move_mode(stack[i]);
 path[d] = stack[i];
         piece  = board[from];
 
