@@ -313,23 +313,23 @@ clock_t ttt[30];
         static const int CONTACT_CHECK = 1;
         static const int DISTANT_CHECK = 2;
         
-        int in_check = 0, checker = -1, check_dir = 20;
+        int in_check = 0, checker_pos = -1, check_dir = 20;
 
         int in_contact_check() { return in_check & CONTACT_CHECK; }
 
         int in_double_check() { return in_check > DISTANT_CHECK; }
 
         // At most two distant checkers.
-        void add_distant_check(int piece, int dir) {
+        void add_distant_checker(int pos, int dir) {
             in_check += DISTANT_CHECK;
-            checker = piece;
+            checker_pos = pos;
             check_dir = dir;
         }
 
         // At most one contact checker.
-        void add_contact_check(int piece, int dir) {
+        void add_contact_checker(int pos, int dir) {
             in_check |= CONTACT_CHECK;
-            checker = piece;
+            checker_pos = pos;
             check_dir = dir;
         }
     };
@@ -545,7 +545,7 @@ clock_t ttt[30];
 
                     if(pinned_pos == slider_pos) {
                         // Distant check detected - we walked all the way to the opposition slider.
-                        check_data.add_distant_check(slider_pos, check_dir);
+                        check_data.add_distant_checker(slider_pos, check_dir);
                     } else {
                         const int pinned_piece = board[pinned_pos];
                         if(is_color(color, pinned_piece)                             // First piece on ray from King is ours.
@@ -605,7 +605,7 @@ clock_t ttt[30];
         int last_to = last_move & 0xFF;
 
         if(DIR_TO_CAPT_CODE[king_pos - last_to] & index_to_capt_code[board[last_to]-WHITE] & C_CONTACT) {
-            check_data.add_contact_check(last_to, delta_vec[last_to - king_pos]);
+            check_data.add_contact_checker(last_to, delta_vec[last_to - king_pos]);
         }
     }
 
@@ -756,7 +756,7 @@ clock_t ttt[30];
                     do{
                         x += check_data.check_dir;
                         if(x==to) break;
-                    } while(x != check_data.checker);
+                    } while(x != check_data.checker_pos);
                     if(x!=to) {  stack[i--] = stack[--msp]; }
                 }
             }
@@ -810,7 +810,7 @@ clock_t ttt[30];
     void gen_moves2(const int color, int last_move, int d) {
         CheckData check_data;
         int pstack[12], ppos[12], psp=0, first_move=msp;
-        int ep_flag = last_move>>MODE_SHIFT&0xFF;
+        int ep_pos = last_move>>MODE_SHIFT&0xFF;
         ep1 = ep2 = msp; Promo = 0;
 
         // Pinned-piece moves and non-contact check detection.
@@ -835,8 +835,8 @@ clock_t ttt[30];
             }
 
             // Generate en-passant captures (at most two).
-            if(!check_data.in_check || check_data.checker == ep_flag) {
-                gen_ep_captures(color, ep_flag);
+            if(!check_data.in_check || check_data.checker_pos == ep_pos) {
+                gen_ep_captures(color, ep_pos);
             }
         
             ep2 = msp; // Save end of en-passant/castling moves.
@@ -844,7 +844,7 @@ clock_t ttt[30];
             // On contact check only King retreat or capture helps.
             // Use a specialized recapture generator in that case.
             if(check_data.in_contact_check()) {
-                gen_piece_moves_in_contact_check(color, check_data.checker);
+                gen_piece_moves_in_contact_check(color, check_data.checker_pos);
             } else {
                 gen_piece_moves(color, first_move, check_data);
             }
