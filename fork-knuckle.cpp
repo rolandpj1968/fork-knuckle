@@ -518,8 +518,8 @@ clock_t ttt[30];
     void gen_pincheck_moves(const int color, CheckData& check_data, int pstack[], int ppos[], int& psp) { n_pincheck_calls++;
         /* Some general preparation */
         int king_pos = this->king_pos(color);
-        int forward = forward_dir(color);   /* forward step */
-        int rank = 0x58 - (forward>>1);     /* 4th/5th rank */
+        int fw = forward_dir(color);   /* forward step */
+        int rank = 0x58 - (fw>>1);     /* 4th/5th rank */
         int prank = 0xD0 - 5*(color>>1);    /* 2nd/7th rank */
 
         // Pintest, starting from possible pinners in enemy slider list.
@@ -548,16 +548,15 @@ clock_t ttt[30];
                             pstack[psp++] = pinned_piece_index;
                             int z = pinned_pos<<8;
                             
-                            if(is_pawn_piece_index(pinned_piece_index)/*index_to_kind[pinned_piece_index] < KNIGHT_KIND*/) {
+                            if(is_pawn_piece_index(pinned_piece_index)) {
                                 // Flag promotions.
-                                int mode = 0; if(is_promo_rank(color, pinned_pos)) { mode = PROMO_MODE; } //!((prank^pinned_pos)&0xF0)) { mode = PROMO_MODE; }
-                                //if(!((prank^pinned_pos)&0xF0)) z |= PROMO_SHIFTED;
-                                int pinned_pos_fw = pinned_pos + forward; 
+                                int mode = 0; if(is_promo_rank(color, pinned_pos)) { mode = PROMO_MODE; }
+                                int pinned_pos_fw = pinned_pos + fw; 
                                 if(!(check_dir&7)) /* Pawn along file */
                                 {   /* generate non-captures  */
                                     if(is_unoccupied(pinned_pos_fw))
                                     {   push_move(pinned_pos, pinned_pos_fw, mode); //push_move_old(z,pinned_pos_fw);
-                                        pinned_pos_fw += forward;Promo++;
+                                        pinned_pos_fw += fw;Promo++;
                                         if(!((board[pinned_pos_fw]&COLOR) | ((rank^pinned_pos_fw)&0xF0))) {
                                             push_move(pinned_pos, pinned_pos_fw, mode | pinned_pos_fw); // push_move_old(z,pinned_pos_fw|pinned_pos_fw<<MODE_SHIFT); // en-passant mode
                                         }
@@ -665,27 +664,27 @@ clock_t ttt[30];
 
     // All pawn moves.
     void gen_pawn_moves(const int color) {
-        int forward = forward_dir(color);   // forward step
-        int rank = 0x58 - (forward>>1);     // 4th/5th rank
+        int fw = forward_dir(color);   // forward step
+        int rank = 0x58 - (fw>>1);     // 4th/5th rank
         int mask = color|0x80;              // own color, empty square, or guard
 
         FOREACH_PAWN(color, {
                 int z = pawn_pos<<8;
-
                 // Flag promotions.
-                if(is_promo_rank(color, pawn_pos)) { Promo++; z |= PROMO_SHIFTED; }
-                
+                int mode = 0; if(is_promo_rank(color, pawn_pos)) { mode = PROMO_MODE; }
+
                 // Capture moves.
-                int pawn_pos_fw = pawn_pos + forward;
-                if(!(board[pawn_pos_fw+LT]&mask)) push_move_old(z,pawn_pos_fw+LT);
-                if(!(board[pawn_pos_fw+RT]&mask)) push_move_old(z,pawn_pos_fw+RT);
+                int pawn_pos_fw = pawn_pos + fw;
+                if(!(board[pawn_pos_fw+LT]&mask)) { push_move(pawn_pos, pawn_pos_fw+LT, mode); }
+                if(!(board[pawn_pos_fw+RT]&mask)) { push_move(pawn_pos, pawn_pos_fw+RT, mode); }
                 
                 // Non-capture moves.
-                if(!(board[pawn_pos_fw]&COLOR))
-                {   push_move_old(z,pawn_pos_fw);
-                    pawn_pos_fw += forward;
-                    if(!((board[pawn_pos_fw]&COLOR) | ((rank^pawn_pos_fw)&0xF0)))
-                        push_move_old(z,pawn_pos_fw|pawn_pos_fw<<MODE_SHIFT);        // e.p. flag
+                if(!(board[pawn_pos_fw]&COLOR)) {
+                    push_move(pawn_pos, pawn_pos_fw, mode); //push_move_old(z,pawn_pos_fw);
+                    pawn_pos_fw += fw;
+                    if(!((board[pawn_pos_fw]&COLOR) | ((rank^pawn_pos_fw)&0xF0))) {
+                        push_move(pawn_pos, pawn_pos_fw, mode | pawn_pos_fw);        // e.p. flag
+                    }
                 }
             });
     }
