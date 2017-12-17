@@ -668,7 +668,7 @@ clock_t ttt[30];
 
         // I have no idea what the extra second condition is here - it looks trivially true, but empirically is required.
         // Maybe something to do with pinned piece elimination? Ah, yes. Pinned pieces are removed from the pieces list, but not from the board!
-        if(is_pawn(color, checker_pos+bw+LT) && index_to_pos[board[checker_pos+bw+LT]-WHITE]) { push_pawn_move(color, checker_pos+bw+LT, checker_pos); }
+        if(is_pawn(color, checker_pos+bw+LT) && !is_pinned(checker_pos+bw+LT)/*index_to_pos[board[checker_pos+bw+LT]-WHITE]*/) { push_pawn_move(color, checker_pos+bw+LT, checker_pos); }
         if(is_pawn(color, checker_pos+bw+RT) && index_to_pos[board[checker_pos+bw+RT]-WHITE]) { push_move_old((checker_pos+bw+RT) << 8, checker_pos_with_mode); }
 
         // Knights
