@@ -632,15 +632,12 @@ clock_t ttt[30];
         }
     }
 
-    // Generate en-passant captures (at most two)
-    void gen_ep_captures(const int color, int ep_flag) {
-        int mask = color | PAWNS_INDEX; // Is this index?
+    // Generate en-passant captures (at most two).
+    void gen_ep_captures(const int color, int ep_pos) {
+        int to_pos = ep_pos ^ FW; // Just a trick to give 3rd or 6th rank.
 
-        int x = ep_flag+1;
-        if(is_pawn(color, x)/*(board[x]&mask)==mask*/) push_move_old(x<<8,(ep_flag^0x10)|EP_SHIFTED);
-
-        x = ep_flag-1;
-        if((board[x]&mask)==mask) push_move_old(x<<8,(ep_flag^0x10)|EP_SHIFTED);
+        if(is_pawn(color, ep_pos+RT)) { push_move(ep_pos+RT, to_pos, EP_MODE); }
+        if(is_pawn(color, ep_pos+LT)) { push_move(ep_pos+LT, to_pos, EP_MODE); }
     }
 
     // @return true iff the given positions have the same rank
@@ -658,6 +655,9 @@ clock_t ttt[30];
     // @return promotion rank for the given color - 2nd for black and 7th for white.
     static bool is_ep_rank(const int color, const int pos) { return is_same_rank(ep_rank(color), pos); }
 
+    // @return true iff the given piece has been removed from the pieces list because it is pinned.
+    bool is_pinned(int piece_pos) { return !index_to_pos[board[piece_pos]-WHITE]; }
+    
     // On contact check only King retreat or capture helps.
     // Use in that case specialized recapture generator.
     void gen_piece_moves_in_contact_check(const int color, int checker_pos) {
@@ -668,7 +668,7 @@ clock_t ttt[30];
 
         // I have no idea what the extra second condition is here - it looks trivially true, but empirically is required.
         // Maybe something to do with pinned piece elimination? Ah, yes. Pinned pieces are removed from the pieces list, but not from the board!
-        if(is_pawn(color, checker_pos+bw+LT) && index_to_pos[board[checker_pos+bw+LT]-WHITE]) { push_move_old((checker_pos+bw+LT) << 8, checker_pos_with_mode); }
+        if(is_pawn(color, checker_pos+bw+LT) && index_to_pos[board[checker_pos+bw+LT]-WHITE]) { push_pawn_move(color, checker_pos+bw+LT, checker_pos); }
         if(is_pawn(color, checker_pos+bw+RT) && index_to_pos[board[checker_pos+bw+RT]-WHITE]) { push_move_old((checker_pos+bw+RT) << 8, checker_pos_with_mode); }
 
         // Knights
