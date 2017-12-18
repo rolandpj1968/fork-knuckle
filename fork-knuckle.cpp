@@ -945,7 +945,7 @@ void perft(const int color, int last_move, int depth, int d)
     nodecount++;
     lep2 = ep2; lkm = Kmoves; local_n_promos = n_promos; local_n_moves = msp - first_move;
 
-#ifdef NO_BULK_COUNTS
+#ifndef NO_BULK_COUNTS
     if(depth == 1) {
         count += local_n_moves + 3*local_n_promos;
         msp = first_move; /* throw away moves */
