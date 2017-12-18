@@ -453,7 +453,7 @@ clock_t ttt[30];
     // @return true iff the given square is capturable by us.
     bool is_capturable(const int color, const int pos) const { return !(board[pos] & (color|0x80)); }
 
-    // @return true iff the given piece is of the given color.
+    // @return true iff the given piece is of the given color (or a guard)?
     static bool is_color(const int color, const int piece) { return piece & color; }
     
     // @return true iff the target square is open or opposition (to take).
@@ -544,7 +544,7 @@ clock_t ttt[30];
         FOREACH_SLIDER(other_color(color), { n_pincheck_sliders++;
                 if(is_on_slider_ray(king_pos, slider_pos, slider_index)) { n_pincheck_checks++;
                     // Slider aimed at our king.
-                    const int check_dir = delta_vec[slider_pos-king_pos];
+                    const int check_dir = delta_vec[slider_pos - king_pos];
                     const int pinned_pos = next_nonempty(king_pos, check_dir);
 
                     if(pinned_pos == slider_pos) {
@@ -643,12 +643,38 @@ clock_t ttt[30];
         }
     }
 
+    // @return true iff this en-passant capture puts the king into discovered check
+    bool is_ep_into_check(const int color, const int ep_pos, const int dir) const {
+        //printf("RPJ   is_ep_into_check - ep_pos is %02x dir %02x\n", ep_pos-0x22, dir&0xff);
+        const int king_pos = this->king_pos(color);
+
+        if(is_same_rank(ep_pos, king_pos)) {
+            //printf("      same rank ep pos %02x king_pos %02x\n", ep_pos-0x22, king_pos-0x22);
+            const int check_dir = delta_vec[ep_pos - king_pos];
+            const int next_piece_pos = next_nonempty(king_pos, check_dir);
+            //printf("          check_dir %02x next_piece_pos %02x\n", check_dir&0xFF, next_piece_pos-0x22);
+            if(next_piece_pos == ep_pos || next_piece_pos == ep_pos+dir) {
+                const int attacker_pos = next_nonempty(next_piece_pos+check_dir, check_dir);
+                const int attacker_piece = board[attacker_pos];
+                if(!is_color(color, attacker_piece)) { // Note - is_color is true for both colors for guards
+                    const int attacker_index = piece_to_index(attacker_piece);
+                    const int attacker_kind = index_to_kind[attacker_index];
+                    //printf("                                                            RPJ!!!! Bingo EP into check - attacker kind %d\n", attacker_kind);
+                    return attacker_kind == ROOK_KIND || attacker_kind == QUEEN_KIND;
+                }
+            }
+        }
+
+        return false;
+    }
+
     // Generate en-passant captures (at most two).
     void gen_ep_captures(const int color, const int ep_pos, const CheckData& check_data) {
+        //printf("RPJ gen_ep_captures - ep_pos is %02x\n", ep_pos-0x22);
         if(!check_data.in_check || check_data.checker_pos == ep_pos) {
             int to_pos = ep_pos ^ FW; // Just a trick to give 3rd or 6th rank.
-            if(is_pawn(color, ep_pos+RT) && !is_pinned(ep_pos+RT)) { push_move(ep_pos+RT, to_pos, EP_MODE); }
-            if(is_pawn(color, ep_pos+LT) && !is_pinned(ep_pos+LT)) { push_move(ep_pos+LT, to_pos, EP_MODE); }
+            if(is_pawn(color, ep_pos+RT) && !is_pinned(ep_pos+RT) && !is_ep_into_check(color, ep_pos, RT)) { push_move(ep_pos+RT, to_pos, EP_MODE); }
+            if(is_pawn(color, ep_pos+LT) && !is_pinned(ep_pos+LT) && !is_ep_into_check(color, ep_pos, LT)) { push_move(ep_pos+LT, to_pos, EP_MODE); }
         }
     }
 
@@ -1028,7 +1054,16 @@ minor:
 
         //if((piece == color /*&& mode != 0xB0+0x03 && mode != 0xB0-0x04*/) && is_attacked_by(other_color(color), king_pos(color))) {
         if(mode == EP_MODE && is_attacked_by(other_color(color), king_pos(color))) {
-            printf("RPJ - boo hoo from %02x to %02x, in_check %02x, check_dir %02x BL is %02x:\n\n", from-0x22, to-0x22, check_data.in_check, check_data.check_dir, BL);
+            int attacker_code = is_attacked_by(other_color(color), king_pos(color));
+            if(attacker_code == 1 || attacker_code ==2) {
+                printf("            - checked by pawn\n");
+            } else {
+                int attacker_index = attacker_code & 0xff;
+                int attacker_kind = index_to_kind[attacker_index];
+                int attacker_pos = index_to_pos[attacker_index];
+                printf("            - checked by %s, kind %d, pos %02x\n", (attacker_code > 512 ? "slider" : "contact"), attacker_kind, attacker_pos-0x22);
+            }
+            printf("RPJ - boo hoo from %02x to %02x, in_check %02x, check_dir %02x, BL is %02x, attacker is %04x:\n\n", from-0x22, to-0x22, check_data.in_check, check_data.check_dir&0xFF, BL&0xFF);
             pboard(board, 12, 0);
             exit(1);
         }
