@@ -954,7 +954,7 @@ path[d] = stack[i];
                 j = mode - 0xB0 + from;
                 h = (from+to) >> 1;
                 /* abort if Rook in check         */
-                if(is_attacked_by(other_color(color), h)) continue;
+                //if(is_attacked_by(other_color(color), h)) continue;
                 /* move Rook                      */
                 board[h] = board[j];
                 board[j] = DUMMY;
@@ -1029,12 +1029,12 @@ minor:
         // Seems more efficient to check king for move-into-check by generating opposition attack board
         //   once in gen_moves???
 
-        if((piece == color /*&& mode != 0xB0+0x03 && mode != 0xB0-0x04*/) && is_attacked_by(other_color(color), king_pos(color))) {
-            printf("RPJ - boo hoo from %02x to %02x, in_check %02x, check_dir %02x BL is %02x:\n\n", from-0x22, to-0x22, check_data.in_check, check_data.check_dir, BL);
-            pboard(board, 12, 0);
-        }
+        // if((piece == color /*&& mode != 0xB0+0x03 && mode != 0xB0-0x04*/) && is_attacked_by(other_color(color), king_pos(color))) {
+        //     printf("RPJ - boo hoo from %02x to %02x, in_check %02x, check_dir %02x BL is %02x:\n\n", from-0x22, to-0x22, check_data.in_check, check_data.check_dir, BL);
+        //     pboard(board, 12, 0);
+        // }
         
-        if((/*!(piece == color && mode != 0xB0+0x03 && mode != 0xB0-0x04)*/piece != color && mode != EP_MODE) || (piece == color && mode != 0xB0+0x03 && mode != 0xB0-0x04) ||
+        if((/*!(piece == color && mode != 0xB0+0x03 && mode != 0xB0-0x04)*/piece != color && mode != EP_MODE) || (piece == color /*&& mode != 0xB0+0x03 && mode != 0xB0-0x04*/) ||
                  !is_attacked_by(other_color(color), king_pos(color)))
         {
       /* recursion or count end leaf */
