@@ -953,8 +953,6 @@ path[d] = stack[i];
             {   /* castling, determine Rook move  */
                 j = mode - 0xB0 + from;
                 h = (from+to) >> 1;
-                /* abort if Rook in check         */
-                //if(is_attacked_by(other_color(color), h)) continue;
                 /* move Rook                      */
                 board[h] = board[j];
                 board[j] = DUMMY;
@@ -1034,9 +1032,7 @@ minor:
         //     pboard(board, 12, 0);
         // }
         
-        if((/*!(piece == color && mode != 0xB0+0x03 && mode != 0xB0-0x04)*/piece != color && mode != EP_MODE) || (piece == color /*&& mode != 0xB0+0x03 && mode != 0xB0-0x04*/) ||
-                 !is_attacked_by(other_color(color), king_pos(color)))
-        {
+        if(mode != EP_MODE || !is_attacked_by(other_color(color), king_pos(color))) {
       /* recursion or count end leaf */
             if(depth == 1 ) {
                 nodecount++;
