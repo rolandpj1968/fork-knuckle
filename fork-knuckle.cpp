@@ -1033,7 +1033,7 @@ minor:
             exit(1);
         }
         
-        if(mode != EP_MODE || !is_attacked_by(other_color(color), king_pos(color))) {
+        if(true || mode != EP_MODE || !is_attacked_by(other_color(color), king_pos(color))) {
       /* recursion or count end leaf */
             if(depth == 1 ) {
                 nodecount++;
