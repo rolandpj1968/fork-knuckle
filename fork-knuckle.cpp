@@ -78,7 +78,7 @@ char          *const delta_vec  = ((char *) brd+1+0xBC+0xEF+0x77); /* step to br
 char Keys[1040];
 int path[100];
     uint32_t stack[1024];
-    int msp = 0, ep1, ep2, Kmoves, Promo, Split, epSqr, HashSize, HashSection;
+    int msp = 0, ep1, ep2, Kmoves, n_promos, Split, epSqr, HashSize, HashSection;
 uint64_t HashKey=8729767686LL, HighKey=1234567890LL, count, epcnt, xcnt, ckcnt, cascnt, promcnt, nodecount;
 FILE *f;
 clock_t ttt[30];
@@ -363,10 +363,14 @@ clock_t ttt[30];
     // Push a special-mode move.
     void push_move(const int from_pos, const int to_pos, const int mode) { stack[msp++] = mk_move(from_pos, to_pos, mode); }
 
-    static int promo_mode_for(const int color, const int pawn_pos) { return is_promo_rank(color, pawn_pos) ? PROMO_MODE : 0; }
-    
     // Push a pawn move to the move stack - and add promo flag where required.
-    void push_pawn_move(const int color, const int from, const int to) { push_move(from, to, promo_mode_for(color, from)); }
+    void push_pawn_move(const int color, const int from, const int to) {
+        int mode = 0; // No promo
+        if(is_promo_rank(color, from)) {
+            n_promos++;
+            mode = PROMO_MODE;
+        }
+        push_move(from, to, mode); }
 
     // Push a pawn move to the move stack - and add promo flag where required.
     void push_ep_pawn_move(const int from, const int to) { push_move(from, to, to); }
@@ -772,8 +776,10 @@ clock_t ttt[30];
             int king_pos = this->king_pos(color);    // King position.
             for(int i = first_move; i < msp; i++) {  // Go through all moves.
                 int to = move_to(stack[i]);              // To position.
+                int mode = move_mode(stack[i]);
                 
                 if(delta_vec[to-king_pos] != check_data.check_dir) {
+                    if(mode == PROMO_MODE) { n_promos--; }
                     stack[i--] = stack[--msp]; // Note, re-orders list. - we could compact in order instead.
                 } else {
                     // On check ray, could block or capture checker.
@@ -782,7 +788,10 @@ clock_t ttt[30];
                         x += check_data.check_dir;
                         if(x==to) break;
                     } while(x != check_data.checker_pos);
-                    if(x!=to) {  stack[i--] = stack[--msp]; }
+                    if(x!=to) {
+                        if(mode == PROMO_MODE) { n_promos--; }
+                        stack[i--] = stack[--msp];
+                    }
                 }
             }
         }
@@ -844,7 +853,7 @@ clock_t ttt[30];
     void gen_moves2(const int color, int last_move, int d, CheckData& check_data) {
         int pstack[12], ppos[12], psp=0, first_move=msp;
         int ep_pos = move_mode(last_move);
-        ep1 = ep2 = msp; Promo = 0;
+        ep1 = ep2 = msp; n_promos = 0;
 
         // Pinned-piece moves and non-contact check detection.
         gen_pincheck_moves(color, check_data, pstack, ppos, psp);
@@ -855,6 +864,7 @@ clock_t ttt[30];
         // Remove moves with pinned pieces if in check.
         if(check_data.in_check) {
             msp = first_move;
+            n_promos = 0;
         }
         
         ep1 = msp; // Save start of en-passant/castling moves.
@@ -922,18 +932,27 @@ clock_t ttt[30];
 void perft(const int color, int last_move, int depth, int d)
 {   /* recursive perft, with in-lined make/unmake */
     int i, j, h, oldpiece, store;
-    int first_move, piece, victim, from, to, capt, mode;
+    int piece, victim, from, to, capt, mode;
     int SavRights = CasRights, lep2, lkm, Index;
     uint64_t ocnt=count, OldKey = HashKey, OldHKey = HighKey, SavCnt;
     union _bucket *Bucket;
+    int local_count = 0, local_n_moves = 0, local_n_promos = 0;
 
     TIME(17)
-    first_move = msp; /* new area on move stack */
+    const int first_move = msp; /* new area on move stack */
     CheckData check_data;
     gen_moves(color, last_move, d, check_data); /* generate moves */
     nodecount++;
-    lep2 = ep2; lkm = Kmoves;
+    lep2 = ep2; lkm = Kmoves; local_n_promos = n_promos; local_n_moves = msp - first_move;
 
+#ifdef NO_BULK_COUNTS
+    if(depth == 1) {
+        count += local_n_moves + 3*local_n_promos;
+        msp = first_move; /* throw away moves */
+        return;
+    }
+#endif //def NO_BULK_COUNTS
+    
     for(i = first_move; i<msp; i++)  /* go through all moves */
     {
       /* fetch move from move stack */
@@ -1036,8 +1055,10 @@ minor:
         /* remove captured piece from piece list  */
         index_to_pos[victim-WHITE] = 0;
 
+        local_count++;
+
         /* recursion or count end leaf */
-        if(depth == 1 ) {
+        if(depth == 1) {
             nodecount++;
             count++;
         } else {
@@ -1112,6 +1133,24 @@ quick:
         CasRights = SavRights;
 
     }
+
+    // static int n_wrong = 0, n_right = 0;
+    // if(local_n_promos > 0) {
+    //     if(local_count == local_n_moves + 3*local_n_promos) {
+    //         n_right++;
+    //     } else {
+    //         n_wrong++;
+    //     }
+    // }
+
+    // if(local_count != local_n_moves + 3*local_n_promos) {
+    //     printf("RPJ - depth %d: local_count %d, local_n_moves %d, local_n_promos %d, now %d wrong, %d right\n\n", depth, local_count, local_n_moves, local_n_promos, n_wrong, n_right);
+    //     pboard(board, 12, 0);
+    //     for(int i = first_move; i < msp; i++) {
+    //         printf("         move %02d: %08x\n", i-first_move, stack[i]);
+    //     }
+    //     exit(1);
+    // }
 
     msp = first_move; /* throw away moves */
 
