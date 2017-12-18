@@ -312,22 +312,35 @@ clock_t ttt[30];
     struct CheckData {
         static const int CONTACT_CHECK = 1;
         static const int DISTANT_CHECK = 2;
-        
-        int in_check = 0, checker_pos = -1, check_dir = 20;
 
-        int in_contact_check() { return in_check & CONTACT_CHECK; }
+        // TODO - ugh all the check-dirs; try to do this better.
+        int in_check = 0, checker_pos = -1, check_dir = 20, distant_check_dir = 0, distant_check_dir2 = 0;
 
-        int in_double_check() { return in_check > DISTANT_CHECK; }
+        bool in_contact_check() const { return in_check & CONTACT_CHECK; }
+
+        bool in_double_check() const { return in_check > DISTANT_CHECK; }
+
+        bool in_distant_check() const { return in_check >= DISTANT_CHECK; }
+
+        bool is_any_check_dir(const int dir) const {
+            return dir == check_dir || dir == distant_check_dir || dir == distant_check_dir2;
+        }
 
         // At most two distant checkers.
-        void add_distant_checker(int pos, int dir) {
+        void add_distant_checker(const int pos, const int dir) {
             in_check += DISTANT_CHECK;
             checker_pos = pos;
             check_dir = dir;
+            if(distant_check_dir == 0) {
+                distant_check_dir = dir;
+            } else {
+                distant_check_dir2 = dir;
+            }
+            
         }
 
         // At most one contact checker.
-        void add_contact_checker(int pos, int dir) {
+        void add_contact_checker(const int pos, const int dir) {
             in_check |= CONTACT_CHECK;
             checker_pos = pos;
             check_dir = dir;
@@ -764,10 +777,18 @@ clock_t ttt[30];
     }
 
     // All king moves - note these are pseudo-moves. Not sure why we don't check for capturable here?
-    void gen_king_moves(const int color) {
+    void gen_king_moves(const int color, const CheckData& check_data) {
         const int king_pos = this->king_pos(color); // King position
 
-#       define M(dir) maybe_gen_move(color, king_pos, dir)
+        // Mmm, why doesn't this work - trying to eliminate pseudo-moves.
+#       define M(dir)                                                   \
+        if(can_move_to(color, king_pos+dir) &&                          \
+           !is_attacked_by(other_color(color), king_pos+dir) &&         \
+           !(check_data.in_check && check_data.is_any_check_dir(-dir) &&!is_pawn(other_color(color), king_pos-dir)) \
+           ) {                                                          \
+                push_move(king_pos, king_pos+dir);                      \
+            }
+#       define M2(dir) maybe_gen_move(color, king_pos, dir)
         // All 8 directions - we will check legality when making the move.
         M(RT); M(FR); M(FW); M(FL); M(LT); M(BL); M(BW); M(BR);
 #       undef M
@@ -784,18 +805,17 @@ clock_t ttt[30];
 
     // Try to get the compiler to inline specialise per color.
     // Seemingly to no avail :D.
-    void gen_moves(const int color, int last_move, int d) {
+    void gen_moves(const int color, int last_move, int d, CheckData& check_data) {
         if(color == WHITE) {
-            gen_moves2(WHITE, last_move, d);
+            gen_moves2(WHITE, last_move, d, check_data);
         } else {
-            gen_moves2(BLACK, last_move, d);
+            gen_moves2(BLACK, last_move, d, check_data);
         }
     }
 
     // This seems to be a pseudo-move generator (but check).
     // It seems like we reject move-into-check (king capturable) when making the move.
-    void gen_moves2(const int color, int last_move, int d) {
-        CheckData check_data;
+    void gen_moves2(const int color, int last_move, int d, CheckData& check_data) {
         int pstack[12], ppos[12], psp=0, first_move=msp;
         int ep_pos = move_mode(last_move);
         ep1 = ep2 = msp; Promo = 0;
@@ -840,7 +860,7 @@ clock_t ttt[30];
         Kmoves = msp; // Save first king move.
 
         // King moves (always generated).
-        gen_king_moves(color);
+        gen_king_moves(color, check_data);
 
         // Put pieces that were parked onto pin stack back in lists.
         restore_pinned_pieces(pstack, ppos, psp);
@@ -859,7 +879,7 @@ clock_t ttt[30];
 
     // Full check for captures on square x by all opponent pieces.
     // Note that color is the color of the capturing piece.
-    int capturable(const int color, const int piece_pos) {
+    int is_attacked_by(const int color, const int piece_pos) {
          // Check for pawns - can only be two.
         int bw = backward_dir(color);
         if(is_pawn(color, piece_pos+bw+RT)) { return 1; }
@@ -888,7 +908,8 @@ void perft(const int color, int last_move, int depth, int d)
 
     TIME(17)
     first_move = msp; /* new area on move stack */
-    gen_moves(color, last_move, d); /* generate moves */
+    CheckData check_data;
+    gen_moves(color, last_move, d, check_data); /* generate moves */
     nodecount++;
     lep2 = ep2; lkm = Kmoves;
 
@@ -928,7 +949,7 @@ path[d] = stack[i];
                 j = mode - 0xB0 + from;
                 h = (from+to) >> 1;
                 /* abort if Rook in check         */
-                if(capturable(other_color(color), h)) continue;
+                if(is_attacked_by(other_color(color), h)) continue;
                 /* move Rook                      */
                 board[h] = board[j];
                 board[j] = DUMMY;
@@ -1002,8 +1023,14 @@ minor:
         // Makes sense, since we treat pinned pieces specially in gen_moves already - only way to move into check is by king move.
         // Seems more efficient to check king for move-into-check by generating opposition attack board
         //   once in gen_moves???
+
+        if((piece == color && mode != 0xB0+0x03 && mode != 0xB0-0x04) && is_attacked_by(other_color(color), king_pos(color))) {
+            printf("RPJ - boo hoo from %02x to %02x, in_check %02x, check_dir %02x BL is %02x:\n\n", from-0x22, to-0x22, check_data.in_check, check_data.check_dir, BL);
+            pboard(board, 12, 0);
+        }
+        
         if((piece != color && mode != EP_MODE) ||
-                 !capturable(other_color(color), king_pos(color)))
+                 !is_attacked_by(other_color(color), king_pos(color)))
         {
       /* recursion or count end leaf */
             if(depth == 1 ) {
