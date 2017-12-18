@@ -531,11 +531,8 @@ clock_t ttt[30];
     // All their remaining legal moves are generated.
     // All distant checks are detected.
     void gen_pincheck_moves(const int color, CheckData& check_data, int pstack[], int ppos[], int& psp) { n_pincheck_calls++;
-        /* Some general preparation */
         int king_pos = this->king_pos(color);
-        int fw = forward_dir(color);   /* forward step */
-        int rank = 0x58 - (fw>>1);     /* 4th/5th rank */
-        int prank = 0xD0 - 5*(color>>1);    /* 2nd/7th rank */
+        int fw = forward_dir(color);
 
         // Pintest, starting from possible pinners in enemy slider list.
         // If aiming at King & 1 piece of us in between, park this piece
@@ -560,40 +557,34 @@ clock_t ttt[30];
                             ppos[psp] = index_to_pos[pinned_piece_index];
                             index_to_pos[pinned_piece_index] = 0;
                             pstack[psp++] = pinned_piece_index;
-                            int z = pinned_pos<<8;
                             
                             if(is_pawn_piece_index(pinned_piece_index)) {
-                                // Flag promotions.
-                                int mode = 0; if(is_promo_rank(color, pinned_pos)) { mode = PROMO_MODE; }
-                                int pinned_pos_fw = pinned_pos + fw; 
                                 if(!(check_dir&7)) { // Pawn along file
                                     // Generate non-captures.
-                                    if(is_unoccupied(pinned_pos_fw)) {
-                                        push_pawn_move(color, pinned_pos, pinned_pos_fw);
-                                        pinned_pos_fw += fw; Promo++;
-                                        if(is_unoccupied(pinned_pos_fw) && !((rank^pinned_pos_fw)&0xF0)) {
-                                            push_move(pinned_pos, pinned_pos_fw, mode | pinned_pos_fw); // en-passant mode
+                                    if(is_unoccupied(pinned_pos+fw)) {
+                                        push_pawn_move(color, pinned_pos, pinned_pos+fw);
+                                        if(is_unoccupied(pinned_pos+fw+fw) && is_ep_rank(color, pinned_pos+fw+fw)) {
+                                            push_ep_pawn_move(pinned_pos, pinned_pos+fw+fw);
                                         }
                                     }
                                 } else {
                                     // Diagonal pin - generate pawn captures, if possible.
-                                    if(pinned_pos_fw+RT == slider_pos) { push_pawn_move(color, pinned_pos, pinned_pos_fw+RT); }
-                                    if(pinned_pos_fw+LT == slider_pos) { push_pawn_move(color, pinned_pos, pinned_pos_fw+LT); }
+                                    if(pinned_pos+fw+RT == slider_pos) { push_pawn_move(color, pinned_pos, pinned_pos+fw+RT); }
+                                    if(pinned_pos+fw+LT == slider_pos) { push_pawn_move(color, pinned_pos, pinned_pos+fw+LT); }
                                 }
-                            } else
-                                if(index_to_capt_code[pinned_piece_index]&DIR_TO_CAPT_CODE[slider_pos-king_pos]&C_DISTANT) {
-                                    // Slider moves along pin ray */
-                                    int to_pos = pinned_pos;
-                                    do { // Moves up to capturing pinner.
-                                        to_pos += check_dir;
-                                        push_move(pinned_pos, to_pos);
-                                    } while(to_pos != slider_pos);
-                                    to_pos = pinned_pos;
-                                    while((to_pos-=check_dir) != king_pos) {
-                                        // Moves towards King.
-                                        push_move(pinned_pos, to_pos);
-                                    }
+                            } else if(index_to_capt_code[pinned_piece_index]&DIR_TO_CAPT_CODE[slider_pos-king_pos]&C_DISTANT) {
+                                // Slider moves along pin ray */
+                                int to_pos = pinned_pos;
+                                do { // Moves up to capturing pinner.
+                                    to_pos += check_dir;
+                                    push_move(pinned_pos, to_pos);
+                                } while(to_pos != slider_pos);
+                                to_pos = pinned_pos;
+                                while((to_pos-=check_dir) != king_pos) {
+                                    // Moves towards King.
+                                    push_move(pinned_pos, to_pos);
                                 }
+                            }
                         }
                     }
                 }
@@ -848,8 +839,8 @@ clock_t ttt[30];
         }
     }
 
-    // This seems to be a pseudo-move generator (but check).
-    // It seems like we reject move-into-check (king capturable) when making the move.
+    // Legal move generator.
+    // Only wrinkle is with promo's - only the queen promo move is generated, and the caller has to generate under-promo's manually.
     void gen_moves2(const int color, int last_move, int d, CheckData& check_data) {
         int pstack[12], ppos[12], psp=0, first_move=msp;
         int ep_pos = move_mode(last_move);
@@ -960,10 +951,9 @@ path[d] = stack[i];
             {   if(((board[to+RT]^piece) & (COLOR|PAWNS_INDEX)) == COLOR ||
                    ((board[to+LT]^piece) & (COLOR|PAWNS_INDEX)) == COLOR)
                     Index = mode * 76265;
-            } else
-            if(mode == EP_MODE) capt ^= 0x10; else
-            if(mode == PROMO_MODE)
-            {   /* Promotion. Shuffle piece list :( */
+            } else if(mode == EP_MODE) {
+                capt ^= 0x10;
+            } else if(mode == PROMO_MODE) {   /* Promotion. Shuffle piece list :( */
                 oldpiece = piece; index_to_pos[piece-WHITE]=0;
                 /* set up for new Queen first */
                 piece = --color_to_first_slider_index[color]+WHITE;
@@ -974,8 +964,7 @@ path[d] = stack[i];
                 HashKey ^= Zobrist(piece, from) ^ Zobrist(oldpiece, from);
                 HighKey ^= Zobrist(piece, from+8) ^ Zobrist(oldpiece, from+8);
                 Index += 14457159; /* prevent hits by non-promotion moves */
-            }else
-            {   /* castling, determine Rook move  */
+            } else {   /* castling, determine Rook move  */
                 j = mode - 0xB0 + from;
                 h = (from+to) >> 1;
                 /* move Rook                      */
@@ -1047,50 +1036,25 @@ minor:
         /* remove captured piece from piece list  */
         index_to_pos[victim-WHITE] = 0;
 
-        // Check for legal move. Seems we check for move-into-check for only king moves and castling???
-        // Makes sense, since we treat pinned pieces specially in gen_moves already - only way to move into check is by king move.
-        // Seems more efficient to check king for move-into-check by generating opposition attack board
-        //   once in gen_moves???
-
-        //if((piece == color /*&& mode != 0xB0+0x03 && mode != 0xB0-0x04*/) && is_attacked_by(other_color(color), king_pos(color))) {
-        if(mode == EP_MODE && is_attacked_by(other_color(color), king_pos(color))) {
-            int attacker_code = is_attacked_by(other_color(color), king_pos(color));
-            if(attacker_code == 1 || attacker_code ==2) {
-                printf("            - checked by pawn\n");
-            } else {
-                int attacker_index = attacker_code & 0xff;
-                int attacker_kind = index_to_kind[attacker_index];
-                int attacker_pos = index_to_pos[attacker_index];
-                printf("            - checked by %s, kind %d, pos %02x\n", (attacker_code > 512 ? "slider" : "contact"), attacker_kind, attacker_pos-0x22);
-            }
-            printf("RPJ - boo hoo from %02x to %02x, in_check %02x, check_dir %02x, BL is %02x, attacker is %04x:\n\n", from-0x22, to-0x22, check_data.in_check, check_data.check_dir&0xFF, BL&0xFF);
-            pboard(board, 12, 0);
-            exit(1);
-        }
-        
-        if(true || mode != EP_MODE || !is_attacked_by(other_color(color), king_pos(color))) {
-      /* recursion or count end leaf */
-            if(depth == 1 ) {
-                nodecount++;
-                count++;
-            }
-            else {
-                perft(other_color(color), stack[i], depth-1, d+1);
-                if(HashFlag)
-                {
-                    if(true/*change to || for large entries only ->*/ && depth > 7) { //large entry
-                        Bucket->l.Signature1 = HighKey;
-                        Bucket->l.Signature2 = HashKey;
-                        Bucket->l.longCount  = count - SavCnt;
-                    } else { // packed entry
-                        Bucket->s.Signature[store] = HighKey;
-                        Bucket->s.Extension[store] = (HashKey>>32) & ~1; // erase low bit
-                        Bucket->s.Count[store]     = count - SavCnt;
-                    }
+        /* recursion or count end leaf */
+        if(depth == 1 ) {
+            nodecount++;
+            count++;
+        } else {
+            perft(other_color(color), stack[i], depth-1, d+1);
+            if(HashFlag) {
+                if(true/*change to || for large entries only ->*/ && depth > 7) { //large entry
+                    Bucket->l.Signature1 = HighKey;
+                    Bucket->l.Signature2 = HashKey;
+                    Bucket->l.longCount  = count - SavCnt;
+                } else { // packed entry
+                    Bucket->s.Signature[store] = HighKey;
+                    Bucket->s.Extension[store] = (HashKey>>32) & ~1; // erase low bit
+                    Bucket->s.Count[store]     = count - SavCnt;
                 }
             }
         }
-      /* retract move */
+        /* retract move */
 
         /* restore piece list */
         index_to_pos[piece-WHITE] = from;
