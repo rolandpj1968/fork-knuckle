@@ -623,14 +623,21 @@ clock_t ttt[30];
     bool has_castling_rights_queenside(const int color) const { return !(CasRights & (color >> 2)); }
 
     // Generate castling moves.
-    void gen_castling_moves(const int color) {
-        if(has_castling_rights(color)) {
-            int king_pos = this->king_pos(color);           // King position
+    void gen_castling_moves(const int color, const CheckData& check_data) {
+        // No castling out of check.
+        if(!check_data.in_check && has_castling_rights(color)) {
+            const int king_pos = this->king_pos(color);         // King position
 
-            if(has_castling_rights_kingside(color) && is_empty(king_pos+RT) && is_empty(king_pos+RT+RT)) {
+            if(has_castling_rights_kingside(color)
+               && is_empty(king_pos+RT) && is_empty(king_pos+RT+RT)
+               && !is_attacked_by(other_color(color), king_pos+RT) && !is_attacked_by(other_color(color), king_pos+RT+RT)
+               ) {
                 push_move(king_pos, king_pos+RT+RT, 0xB0 + 0x03);
             }
-            if(has_castling_rights_queenside(color) && is_empty(king_pos+LT) && is_empty(king_pos+LT+LT) && is_empty(king_pos+LT+LT+LT)) {
+            if(has_castling_rights_queenside(color)
+               && is_empty(king_pos+LT) && is_empty(king_pos+LT+LT) && is_empty(king_pos+LT+LT+LT)
+               && !is_attacked_by(other_color(color), king_pos+LT) && !is_attacked_by(other_color(color), king_pos+LT+LT)
+               ) {
                 push_move(king_pos, king_pos+LT+LT, 0xB0 - 0x04);
             }
         }
@@ -780,7 +787,8 @@ clock_t ttt[30];
     void gen_king_moves(const int color, const CheckData& check_data) {
         const int king_pos = this->king_pos(color); // King position
 
-        // Mmm, why doesn't this work - trying to eliminate pseudo-moves.
+        // TODO - improve check_dir management; this should be simpler.
+        //   Note need to check for pawn cos check_dir is same as for B in contact.
 #       define M(dir)                                                   \
         if(can_move_to(color, king_pos+dir) &&                          \
            !is_attacked_by(other_color(color), king_pos+dir) &&         \
@@ -835,11 +843,8 @@ clock_t ttt[30];
 
         // If we're not in double check, then generate moves for all pieces, otherwise only king moves are allowed
         if(!check_data.in_double_check()) {
-            // No castling out of check.
-            if(!check_data.in_check) {
-                // Generate castlings.
-                gen_castling_moves(color);
-            }
+            // Generate castlings.
+            gen_castling_moves(color, check_data);
 
             // Generate en-passant captures (at most two).
             if(!check_data.in_check || check_data.checker_pos == ep_pos) {
@@ -1029,7 +1034,7 @@ minor:
             pboard(board, 12, 0);
         }
         
-        if((piece != color && mode != EP_MODE) ||
+        if((/*!(piece == color && mode != 0xB0+0x03 && mode != 0xB0-0x04)*/piece != color && mode != EP_MODE) || (piece == color && mode != 0xB0+0x03 && mode != 0xB0-0x04) ||
                  !is_attacked_by(other_color(color), king_pos(color)))
         {
       /* recursion or count end leaf */
