@@ -644,11 +644,12 @@ clock_t ttt[30];
     }
 
     // Generate en-passant captures (at most two).
-    void gen_ep_captures(const int color, int ep_pos) {
-        int to_pos = ep_pos ^ FW; // Just a trick to give 3rd or 6th rank.
-
-        if(is_pawn(color, ep_pos+RT)) { push_move(ep_pos+RT, to_pos, EP_MODE); }
-        if(is_pawn(color, ep_pos+LT)) { push_move(ep_pos+LT, to_pos, EP_MODE); }
+    void gen_ep_captures(const int color, const int ep_pos, const CheckData& check_data) {
+        if(!check_data.in_check || check_data.checker_pos == ep_pos) {
+            int to_pos = ep_pos ^ FW; // Just a trick to give 3rd or 6th rank.
+            if(is_pawn(color, ep_pos+RT) && !is_pinned(ep_pos+RT)) { push_move(ep_pos+RT, to_pos, EP_MODE); }
+            if(is_pawn(color, ep_pos+LT) && !is_pinned(ep_pos+LT)) { push_move(ep_pos+LT, to_pos, EP_MODE); }
+        }
     }
 
     // @return true iff the given positions have the same rank
@@ -847,9 +848,7 @@ clock_t ttt[30];
             gen_castling_moves(color, check_data);
 
             // Generate en-passant captures (at most two).
-            if(!check_data.in_check || check_data.checker_pos == ep_pos) {
-                gen_ep_captures(color, ep_pos);
-            }
+            gen_ep_captures(color, ep_pos, check_data);
         
             ep2 = msp; // Save end of en-passant/castling moves.
 
@@ -1027,10 +1026,12 @@ minor:
         // Seems more efficient to check king for move-into-check by generating opposition attack board
         //   once in gen_moves???
 
-        // if((piece == color /*&& mode != 0xB0+0x03 && mode != 0xB0-0x04*/) && is_attacked_by(other_color(color), king_pos(color))) {
-        //     printf("RPJ - boo hoo from %02x to %02x, in_check %02x, check_dir %02x BL is %02x:\n\n", from-0x22, to-0x22, check_data.in_check, check_data.check_dir, BL);
-        //     pboard(board, 12, 0);
-        // }
+        //if((piece == color /*&& mode != 0xB0+0x03 && mode != 0xB0-0x04*/) && is_attacked_by(other_color(color), king_pos(color))) {
+        if(mode == EP_MODE && is_attacked_by(other_color(color), king_pos(color))) {
+            printf("RPJ - boo hoo from %02x to %02x, in_check %02x, check_dir %02x BL is %02x:\n\n", from-0x22, to-0x22, check_data.in_check, check_data.check_dir, BL);
+            pboard(board, 12, 0);
+            exit(1);
+        }
         
         if(mode != EP_MODE || !is_attacked_by(other_color(color), king_pos(color))) {
       /* recursion or count end leaf */
