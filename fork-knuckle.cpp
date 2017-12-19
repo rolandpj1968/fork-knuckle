@@ -425,6 +425,9 @@ char Keys[1040];
     // @return Piece index of the first pawn.
     static int last_pawn_index(const int color) { return color-WHITE+PAWNS_INDEX+8 - 1; }
 
+    // @return Piece index of the first pawn.
+    static int last_pawn_piece(const int color) { return color+PAWNS_INDEX+8 - 1; }
+
     // @return Piece index of the first knight.
     static int first_knight_index(const int color) { return king_index(color) + 1; }
 
@@ -478,8 +481,8 @@ char Keys[1040];
     
 #   define FOREACH_PAWN(color, block) do {                            \
         const int color__ = (color);                                    \
-        FOREACH_PIECE(color_to_first_pawn_piece[color__]-WHITE, last_pawn_index(color__), { \
-                const int pawn_index = piece_index__; const int pawn_pos = piece_pos__; \
+        FOREACH_PIECE2(color_to_first_pawn_piece[color__], last_pawn_piece(color__), { \
+                const int pawn_piece = piece__; const int pawn_pos = piece_pos__; \
                 do block while(false);                                  \
             });                                                         \
     } while(false)  
