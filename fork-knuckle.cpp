@@ -480,7 +480,7 @@ char Keys[1040];
             });                                                         \
     } while(false)  
     
-#   define FOREACH_SLIDER2(color, block) do {                            \
+#   define FOREACH_SLIDER(color, block) do {                            \
         const int color__ = (color);                                    \
         FOREACH_PIECE(first_slider_index(color__), last_slider_index(color__), { \
                 const int slider = piece_index__+WHITE; const int slider_pos = piece_pos__; \
@@ -535,7 +535,7 @@ char Keys[1040];
     }
 
     // @return true iff the given slider piece is attacking (or defending) the target position.
-    bool is_attacking_slider2(const int slider, const int slider_pos, const int target_pos) const {
+    bool is_attacking_slider(const int slider, const int slider_pos, const int target_pos) const {
         if(is_attacking_weak2(slider, slider_pos, target_pos)) {
             int dir = delta_vec[slider_pos - target_pos]; // Single square move.
             // Baby steps from target piece back towards slider.
@@ -599,7 +599,7 @@ char Keys[1040];
         // If aiming at King & 1 piece of us in between, park this piece
         //   on pin stack for rest of move generation, after generating its
         //   moves along the pin line.
-        FOREACH_SLIDER2(other_color(color), {
+        FOREACH_SLIDER(other_color(color), {
                 if(is_on_slider_ray2(king_pos, slider_pos, slider)) {
                     // Slider aimed at our king.
                     const int check_dir = delta_vec[slider_pos - king_pos];
@@ -767,8 +767,8 @@ char Keys[1040];
             });
 
         // Sliders
-        FOREACH_SLIDER2(color, {
-                if(is_attacking_slider2(slider, slider_pos, checker_pos)) {
+        FOREACH_SLIDER(color, {
+                if(is_attacking_slider(slider, slider_pos, checker_pos)) {
                     push_move(slider_pos, checker_pos);
                 }
             });
@@ -813,7 +813,7 @@ char Keys[1040];
             } while(!is_occupied(to)); \
         } while(false)
             
-        FOREACH_SLIDER2(color, {
+        FOREACH_SLIDER(color, {
                 const int slider_kind = piece_to_kind[slider];
 
                 if(slider_kind != BISHOP_KIND) {
@@ -959,8 +959,8 @@ char Keys[1040];
             });
 
         // Check sliders.
-        FOREACH_SLIDER2(color, {
-                if(is_attacking_slider2(slider, slider_pos, piece_pos)) { return slider-WHITE + 512; }
+        FOREACH_SLIDER(color, {
+                if(is_attacking_slider(slider, slider_pos, piece_pos)) { return slider-WHITE + 512; }
             });
         
         return 0;
