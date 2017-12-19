@@ -66,9 +66,9 @@ char *Zob[2*NPCE];
 
 /* Piece counts hidden in the unused Pawn section, indexed by color */
 unsigned char *const color_to_last_knight_piece  = (piece_to_capt_code-4+WHITE);
-    //unsigned char *const color_to_first_slider_index = (piece_to_capt_code-3+WHITE);
 unsigned char *const color_to_first_slider_piece = (piece_to_capt_code-3+WHITE);
-unsigned char *const color_to_first_pawn_index   = (piece_to_capt_code-2+WHITE);
+    //unsigned char *const color_to_first_pawn_index   = (piece_to_capt_code-2+WHITE);
+unsigned char *const color_to_first_pawn_piece   = (piece_to_capt_code-2+WHITE);
 
 /* offset overlays to allow negative array subscripts      */
 /* and avoid cache collisions of these heavily used arrays */
@@ -207,13 +207,11 @@ char Keys[1040];
         // Piece indexes (can change when we compactify lists, or promote).
         // Doesn't look like any compaction is done at present.
         color_to_last_knight_piece[WHITE]  = K_KNIGHT_INDEX + WHITE;
-        //color_to_first_slider_index[WHITE] = QUEEN_INDEX;
         color_to_first_slider_piece[WHITE] = QUEEN_INDEX + WHITE;
-        color_to_first_pawn_index[WHITE]   = PAWNS_INDEX;
+        color_to_first_pawn_piece[WHITE]   = PAWNS_INDEX + WHITE;
         color_to_last_knight_piece[BLACK]  = K_KNIGHT_INDEX + BLACK;
-        //color_to_first_slider_index[BLACK] = QUEEN_INDEX + WHITE;
         color_to_first_slider_piece[BLACK] = QUEEN_INDEX + BLACK;
-        color_to_first_pawn_index[BLACK]   = PAWNS_INDEX + WHITE;
+        color_to_first_pawn_piece[BLACK]   = PAWNS_INDEX + BLACK;
 
         // Why isn't Zob initialised for all pieces - ah, it's initialised from FEN parsing, always.
         Zob[DUMMY-WHITE] = Keys-0x22;
@@ -251,14 +249,12 @@ char Keys[1040];
         
         /* remove all pieces */
         for(int i=0; i<NPCE; i++) piece_to_pos[i+WHITE] = piece_to_cstl[i+WHITE] = 0;
-        //color_to_first_slider_index[WHITE] = 0x10;
-        //color_to_first_slider_index[BLACK] = 0x30;
         color_to_first_slider_piece[WHITE] = 0x10+WHITE;
         color_to_first_slider_piece[BLACK] = 0x30+WHITE; // TODO sort out these constants
         color_to_last_knight_piece[WHITE]  = 0x00+WHITE;
         color_to_last_knight_piece[BLACK]  = 0x20+WHITE; // TODO BLACK
-        color_to_first_pawn_index[WHITE]   = 0x18;
-        color_to_first_pawn_index[BLACK]   = 0x38;
+        color_to_first_pawn_piece[WHITE]   = 0x18+WHITE;
+        color_to_first_pawn_piece[BLACK]   = 0x38+WHITE; // TODO sort out
         CasRights = 0;
         
         const char *p = FEN;
@@ -291,18 +287,15 @@ char Keys[1040];
                         }
                     case 'Q': piece_kind += 2;
                     case 'B': 
-                        //if(--color_to_first_slider_index[color] <= color_to_last_knight_piece[color]-WHITE) return(-2);
                         if(--color_to_first_slider_piece[color] <= color_to_last_knight_piece[color]) return(-2);
-                        //nr = color_to_first_slider_index[color];
                         nr = color_to_first_slider_piece[color]-WHITE;
                         break;
                     case 'P': 
-                        if(--color_to_first_pawn_index[color] < color-WHITE+FW) return(-4);
-                        nr = color_to_first_pawn_index[color];
+                        if(--color_to_first_pawn_piece[color] < color+FW) return(-4);
+                        nr = color_to_first_pawn_piece[color]-WHITE;
                         piece_kind = color>>5;
                         break;
                     case 'N': 
-                        //if(color_to_first_slider_index[color] <= ++color_to_last_knight_piece[color]-WHITE) return(-3);
                         if(color_to_first_slider_piece[color] <= ++color_to_last_knight_piece[color]) return(-3);
                         nr = color_to_last_knight_piece[color]-WHITE;
                         piece_kind = KNIGHT_KIND;
@@ -428,7 +421,7 @@ char Keys[1040];
     static int king_piece(const int color) { return color + KING_INDEX; }
 
     // @return Piece index of the first pawn.
-    int first_pawn_index(const int color) { return color_to_first_pawn_index[color]; }
+    int first_pawn_index(const int color) { return color_to_first_pawn_piece[color]-WHITE; }
 
     // @return Piece index of the first pawn.
     static int last_pawn_index(const int color) { return color-WHITE+PAWNS_INDEX+8 - 1; }
@@ -440,7 +433,6 @@ char Keys[1040];
     int last_knight_index(const int color) const { return color_to_last_knight_piece[color]-WHITE; }
 
     // @return Piece index of the first slider.
-    //int first_slider_index(const int color) const { return color_to_first_slider_index[color]; }
     int first_slider_index(const int color) const { return color_to_first_slider_piece[color]-WHITE; }
 
     // @return Piece index of the last slider.
@@ -1054,7 +1046,6 @@ char Keys[1040];
                     piece = ++color_to_last_knight_piece[color];
                 } else {
                     // Sliders into sliders list
-                    //piece = --color_to_first_slider_index[color]+WHITE;
                     piece = --color_to_first_slider_piece[color];
                 }
                 piece_index = piece_to_index(piece);
@@ -1086,7 +1077,6 @@ char Keys[1040];
                 if(piece_to_kind[piece_index+WHITE] == KNIGHT_KIND) {
                     color_to_last_knight_piece[color]--;
                 } else {
-                    //color_to_first_slider_index[color]++;
                     color_to_first_slider_piece[color]++;
                 }
                 piece_to_pos[orig_piece] = from;
