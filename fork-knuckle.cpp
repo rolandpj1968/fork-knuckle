@@ -67,7 +67,6 @@ char *Zob[2*NPCE];
 /* Piece counts hidden in the unused Pawn section, indexed by color */
 unsigned char *const color_to_last_knight_piece  = (piece_to_capt_code-4+WHITE);
 unsigned char *const color_to_first_slider_piece = (piece_to_capt_code-3+WHITE);
-    //unsigned char *const color_to_first_pawn_index   = (piece_to_capt_code-2+WHITE);
 unsigned char *const color_to_first_pawn_piece   = (piece_to_capt_code-2+WHITE);
 
 /* offset overlays to allow negative array subscripts      */
@@ -421,7 +420,7 @@ char Keys[1040];
     static int king_piece(const int color) { return color + KING_INDEX; }
 
     // @return Piece index of the first pawn.
-    int first_pawn_index(const int color) { return color_to_first_pawn_piece[color]-WHITE; }
+    int first_pawn_piece(const int color) { return color_to_first_pawn_piece[color]; }
 
     // @return Piece index of the first pawn.
     static int last_pawn_index(const int color) { return color-WHITE+PAWNS_INDEX+8 - 1; }
@@ -459,7 +458,7 @@ char Keys[1040];
     
 #   define FOREACH_PAWN(color, block) do {                            \
         const int color__ = (color);                                    \
-        FOREACH_PIECE(first_pawn_index(color__), last_pawn_index(color__), { \
+        FOREACH_PIECE(first_pawn_piece(color__)-WHITE, last_pawn_index(color__), { \
                 const int pawn_index = piece_index__; const int pawn_pos = piece_pos__; \
                 do block while(false);                                  \
             });                                                         \
