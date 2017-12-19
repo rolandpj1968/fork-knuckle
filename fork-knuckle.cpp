@@ -272,22 +272,23 @@ char Keys[1040];
                 else {
                     color = WHITE;
                     if(c >= 'a') { c += 'A'-'a'; color = BLACK; }
-                    int Piece = BISHOP_KIND, cc = 0, nr;
+                    int piece_kind = BISHOP_KIND, cc = 0, nr;
                     switch(c) {
                     case 'K':
-                        if(index_to_pos[color-WHITE] > 0) return -1;   /* two kings illegal */
-                        Piece = KING_KIND;
+                        //if(index_to_pos[color-WHITE] > 0) return -1;   /* two kings illegal */
+                        if(piece_to_pos[color] > 0) return -1;   // two kings illegal
+                        piece_kind = KING_KIND;
                         nr = color-WHITE;
                         if(0x20*row == 7*(color-WHITE) && file == 4) cc = (color|color>>2|color>>4);
                         
                         break;
-                    case 'R': Piece--;
+                    case 'R': piece_kind--;
                         if(0x20*row == 7*(color-WHITE)) {
                             /* only Rooks on a1, h1, a8, h8 get castling spoiler */
                             if(file == 0) cc = color>>2;
                             if(file == 7) cc = color>>4;
                         }
-                    case 'Q': Piece += 2;
+                    case 'Q': piece_kind += 2;
                     case 'B': 
                         if(--color_to_first_slider_index[color] <= color_to_last_knight_index[color]) return(-2);
                         nr = color_to_first_slider_index[color];
@@ -295,20 +296,21 @@ char Keys[1040];
                     case 'P': 
                         if(--color_to_first_pawn_index[color] < color-WHITE+FW) return(-4);
                         nr = color_to_first_pawn_index[color];
-                        Piece = color>>5;
+                        piece_kind = color>>5;
                         break;
                     case 'N': 
                         if(color_to_first_slider_index[color] <= ++color_to_last_knight_index[color]) return(-3);
                         nr = color_to_last_knight_index[color];
-                        Piece = KNIGHT_KIND;
+                        piece_kind = KNIGHT_KIND;
                         break;
                     default:
                         return -15;
                     }
-                    index_to_pos[nr] = ((file +  16*row) & 0x77) + 0x22;
-                    index_to_kind[nr] = Piece;
-                    index_to_capt_code[nr] = KIND_TO_CAPT_CODE[Piece];
-                    Zob[nr]  = Keys + 128*Piece + (color&BLACK)/8 - 0x22;
+                    //index_to_pos[nr] = ((file +  16*row) & 0x77) + 0x22;
+                    piece_to_pos[WHITE+nr] = ((file +  16*row) & 0x77) + 0x22;
+                    index_to_kind[nr] = piece_kind;
+                    index_to_capt_code[nr] = KIND_TO_CAPT_CODE[piece_kind];
+                    Zob[nr]  = Keys + 128*piece_kind + (color&BLACK)/8 - 0x22;
                     cstl[nr] = cc;
                     CasRights |= cc;       /* remember K & R on original location */
                     file++;
@@ -321,7 +323,8 @@ char Keys[1040];
                 if(row==0  && c != ' ') return -11;
             }
         }
-        if(index_to_pos[0] == 0 || index_to_pos[WHITE] == 0) return -5; /* missing king */
+        if(piece_to_pos[king_piece(WHITE)] == 0 || index_to_pos[king_piece(BLACK)] == 0) return -5; /* missing king */
+        //if(index_to_pos[0] == 0 || index_to_pos[WHITE] == 0) return -5; /* missing king */
 
         /* now do castle rights and side to move */
         cstl[DUMMY-WHITE]=0;
@@ -601,7 +604,8 @@ char Keys[1040];
                             ppos[psp] = piece_to_pos[pinned_piece];
                             //index_to_pos[pinned_piece_index] = 0;
                             piece_to_pos[pinned_piece] = 0;
-                            pstack[psp++] = pinned_piece_index;
+                            //pstack[psp++] = pinned_piece_index;
+                            pstack[psp++] = pinned_piece;
                             
                             if(is_pawn_piece_index(pinned_piece_index)) {
                                 if(!(check_dir&7)) { // Pawn along file
@@ -871,10 +875,10 @@ char Keys[1040];
 
     // Put pieces that were parked onto pin stack back in lists.
     void restore_pinned_pieces(int pstack[], int ppos[], int psp) {
-       while(psp>0) {
+       while(psp > 0) {
            // Pop pinned piece and link in old place it remembers.
-           int m = pstack[--psp];
-           index_to_pos[m] = ppos[psp];
+           const int piece = pstack[--psp];
+           piece_to_pos[piece] = ppos[psp];
         }
     }
 
