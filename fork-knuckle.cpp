@@ -828,8 +828,8 @@ char Keys[1040];
             } while(!is_occupied(to)); \
         } while(false)
             
-        FOREACH_SLIDER(color, {
-                const int slider_kind = piece_to_kind[slider_index+WHITE];
+        FOREACH_SLIDER2(color, {
+                const int slider_kind = piece_to_kind[slider];
 
                 if(slider_kind != BISHOP_KIND) {
                     // All 4 rook rays for Rook and Queen.
