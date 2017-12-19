@@ -76,15 +76,44 @@ char          *const delta_vec  = ((char *) brd+1+0xBC+0xEF+0x77); /* step to br
     char noUnder = 0; // Non-zero to fobid under-promotions.
 
 char Keys[1040];
-int path[100];
+    struct Move {
+    private:
+        // Contruct a move in integer representation with 'to' in the low byte and 'from' in the second lowest byte
+        static int mk_move(const int from_pos, const int to_pos) { return (from_pos << FROM_SHIFT) | to_pos; }
+
+        // Contruct a move in integer representation with 'to' in the low byte, 'from' in the second lowest byte and mode/flags in the high byte
+        static int mk_move(const int from_pos, const int to_pos, const int mode) { return (mode << MODE_SHIFT) | mk_move(from_pos, to_pos); }
+
+        uint32_t move;
+        // const uint8_t from_pos;
+        // const uint8_t to_pos;
+        // uint8_t unused;
+        // const uint8_t mode;
+
+    public:
+        Move(const uint8_t from_pos, const uint8_t to_pos, const uint8_t mode) :
+            move(mk_move(from_pos, to_pos, mode)) {}
+            //from_pos(from_pos), to_pos(to_pos), mode(mode) {}
+
+        Move(const uint8_t from_pos, const uint8_t to_pos) :
+            move(mk_move(from_pos, to_pos)) {}
+
+        Move() {}
+
+        int to() const { return move & 0xFF; }
+
+        int from() const { return (move >> FROM_SHIFT) & 0xFF; }
+
+        int mode() const { return (move >> MODE_SHIFT) & 0xFF; }
+    };
 
     struct MoveStack {
-        uint32_t stack[1024];
+        Move stack[1024];
         int msp = 0;
 
-        void push(const uint32_t move) { stack[msp++] = move; }
+        void push(const Move move) { stack[msp++] = move; }
 
-        uint32_t at(const int i) const { return stack[i]; }
+        Move at(const int i) const { return stack[i]; }
 
         void swap_pop(const int i) { stack[i] = stack[--msp]; }
 
@@ -94,6 +123,8 @@ int path[100];
             return n_popped;
         }
     } move_stack;
+
+    Move path[100];
 
     int epSqr, HashSize, HashSection;
     uint64_t HashKey=8729767686LL, HighKey=1234567890LL, count, epcnt, xcnt, ckcnt, cascnt, promcnt, nodecount;
@@ -200,24 +231,6 @@ int path[100];
             printf("\n");
         }
         printf("\n");
-    }
-
-    int checker(const int color) {
-        for(int i=0; i<8; i++) {
-            int v = KING_ROSE[i];
-            int x = index_to_pos[king_index(color)] + v;
-            int piece = board[x];
-            if((piece & COLOR) == other_color(color)) {
-                if(index_to_capt_code[piece-WHITE] & DIR_TO_CAPT_CODE[-v]) return x;
-            }
-            v = KNIGHT_ROSE[i];
-            x = index_to_pos[king_index(color)] + v;
-            piece = board[x];
-            if((piece & COLOR) == other_color(color)) {
-                if(index_to_capt_code[piece-WHITE] & DIR_TO_CAPT_CODE[-v]) return x;
-            }
-        }
-        return 0;
     }
 
     int ReadFEN(const char *FEN) {
@@ -368,17 +381,11 @@ int path[100];
     static int move_from(const int move) { return (move >> FROM_SHIFT) & 0xFF; }
     static int move_mode(const int move) { return (move >> MODE_SHIFT) & 0xFF; }
 
-    // Contruct a move in integer representation with 'to' in the low byte and 'from' in the second lowest byte
-    static int mk_move(const int from_pos, const int to_pos) { return (from_pos << FROM_SHIFT) | to_pos; }
-
-    // Contruct a move in integer representation with 'to' in the low byte, 'from' in the second lowest byte and mode/flags in the high byte
-    static int mk_move(const int from_pos, const int to_pos, const int mode) { return (mode << MODE_SHIFT) | mk_move(from_pos, to_pos); }
-
     // Push a normal move.
-    void push_move(const int from_pos, const int to_pos) { move_stack.push(mk_move(from_pos, to_pos)); }
+    void push_move(const int from_pos, const int to_pos) { move_stack.push(Move(from_pos, to_pos)); }
 
     // Push a special-mode move.
-    void push_move(const int from_pos, const int to_pos, const int mode) { move_stack.push(mk_move(from_pos, to_pos, mode)); }
+    void push_move(const int from_pos, const int to_pos, const int mode) { move_stack.push(Move(from_pos, to_pos, mode)); }
 
     // Push a pawn move to the move stack - and add promo flag where required.
     void push_pawn_move(const int color, const int from, const int to) {
@@ -618,9 +625,9 @@ int path[100];
     }
 
     // Determine if there is a contact check - there can only be one and it must be the last piece moved.
-    void get_contact_check(const int color, int last_move, CheckData& check_data) {
+    void get_contact_check(const int color, Move last_move, CheckData& check_data) {
         int king_pos = this->king_pos(color);
-        int last_to = move_to(last_move);
+        int last_to = last_move.to();
 
         if(DIR_TO_CAPT_CODE[king_pos - last_to] & index_to_capt_code[board[last_to]-WHITE] & C_CONTACT) {
             check_data.add_contact_checker(last_to, delta_vec[last_to - king_pos]);
@@ -794,8 +801,8 @@ int path[100];
         if(check_data.in_check) {
             int king_pos = this->king_pos(color);    // King position.
             for(int i = first_move; i < move_stack.msp; i++) {  // Go through all moves.
-                int to = move_to(move_stack.at(i));              // To position.
-                int mode = move_mode(move_stack.at(i));
+                int to = move_stack.at(i).to();
+                int mode = move_stack.at(i).mode();
                 
                 if(delta_vec[to-king_pos] != check_data.check_dir) {
                     move_stack.swap_pop(i--); // Note, re-orders list. - we could compact in order instead.
@@ -855,21 +862,11 @@ int path[100];
         }
     }
 
-    // Try to get the compiler to inline specialise per color.
-    // Seemingly to no avail :D.
-    void gen_moves(const int color, int last_move, int d, CheckData& check_data) {
-        if(color == WHITE) {
-            gen_moves2(WHITE, last_move, d, check_data);
-        } else {
-            gen_moves2(BLACK, last_move, d, check_data);
-        }
-    }
-
     // Legal move generator.
     // Only wrinkle is with promo's - only the queen promo move is generated, and the caller has to generate under-promo's manually.
-    void gen_moves2(const int color, int last_move, int d, CheckData& check_data) {
+    void gen_moves(const int color, Move last_move, int d, CheckData& check_data) {
         int pstack[12], ppos[12], psp=0, first_move = move_stack.msp;
-        int ep_pos = move_mode(last_move);
+        int ep_pos = last_move.mode();
 
         // Pinned-piece moves and non-contact check detection.
         gen_pincheck_moves(color, check_data, pstack, ppos, psp);
@@ -936,7 +933,7 @@ int path[100];
         return 0;
     }    
 
-void perft(const int color, int last_move, int depth, int d)
+void perft(const int color, Move last_move, int depth, int d)
 {   /* recursive perft, with in-lined make/unmake */
     int i, j, h, oldpiece, store;
     int piece, victim, from, to, capt, mode;
@@ -960,9 +957,9 @@ void perft(const int color, int last_move, int depth, int d)
     for(i = first_move; i < move_stack.msp; i++)  /* go through all moves */
     {
       /* fetch move from move stack */
-        from = move_from(move_stack.at(i));
-        to = capt = move_to(move_stack.at(i));
-        mode = move_mode(move_stack.at(i));
+        from = move_stack.at(i).from();
+        to = capt = move_stack.at(i).to();
+        mode = move_stack.at(i).mode();
         path[d] = move_stack.at(i);
         piece  = board[from];
 
@@ -1132,28 +1129,46 @@ quick:
     move_stack.pop_to(first_move); /* throw away moves */
 }
 
-void doit(int Dep, int color) {
-
-    printf("Quick Perft by H.G. Muller\n");
-    printf("Perft mode: ");
-    if(HashFlag) printf("Hash-table size = %d%cB",
-                 (HashSize+2) >> (HashSize<64*1024 ? 6: 16),
-                 HashSize<64*1024 ? 'k' : 'M' );
-    else         printf("No hashing");
-    printf("\n\n");
-
-    for(int i=1; i<=Dep; i++)
-    {
-        int last_move = ((epSqr^16)<<MODE_SHIFT) + checker(color);
-        clock_t t = clock();
-        count = epcnt = xcnt = ckcnt = cascnt = promcnt = 0;
-        for(int j=0; j<10; j++) accept[j] = reject[j] = 0, ttt[j] = t;
-        perft(color, last_move, i, 1);
-        t = clock()-t;
-        printf("perft(%2d)= %12lld (%6.3f sec)\n", i, count, t*(1./CLOCKS_PER_SEC));
-        fflush(stdout);
+    int checker_pos(const int color) {
+        for(int i=0; i<8; i++) {
+            int v = KING_ROSE[i];
+            int x = index_to_pos[king_index(color)] + v;
+            int piece = board[x];
+            if((piece & COLOR) == other_color(color)) {
+                if(index_to_capt_code[piece-WHITE] & DIR_TO_CAPT_CODE[-v]) return x;
+            }
+            v = KNIGHT_ROSE[i];
+            x = index_to_pos[king_index(color)] + v;
+            piece = board[x];
+            if((piece & COLOR) == other_color(color)) {
+                if(index_to_capt_code[piece-WHITE] & DIR_TO_CAPT_CODE[-v]) return x;
+            }
+        }
+        return 0;
     }
-}
+
+    void doit(int Dep, int color) {
+
+        printf("Quick Perft by H.G. Muller\n");
+        printf("Perft mode: ");
+        if(HashFlag) printf("Hash-table size = %d%cB",
+                            (HashSize+2) >> (HashSize<64*1024 ? 6: 16),
+                            HashSize<64*1024 ? 'k' : 'M' );
+        else         printf("No hashing");
+        printf("\n\n");
+
+        for(int i=1; i<=Dep; i++)
+        {
+            Move last_move(checker_pos(color), 0, (epSqr^0x10));
+            clock_t t = clock();
+            count = epcnt = xcnt = ckcnt = cascnt = promcnt = 0;
+            for(int j=0; j<10; j++) accept[j] = reject[j] = 0, ttt[j] = t;
+            perft(color, last_move, i, 1);
+            t = clock()-t;
+            printf("perft(%2d)= %12lld (%6.3f sec)\n", i, count, t*(1./CLOCKS_PER_SEC));
+            fflush(stdout);
+        }
+    }
 
 void setup_hash(int size) {
     HashSize = size;
