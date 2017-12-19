@@ -91,9 +91,8 @@ static const int BBL = BW+BL;
 static const int BBR = BW+BR;
 static const int BRR = RT+BR;
 
-static const int QUEEN_DIR[8]   = {RT, LT, FW, BW, FL, BR, FR, BL};
-static const int KING_ROSE[8]   = {RT, FR, FW, FL, LT, BL, BW, BR};
-static const int KNIGHT_ROSE[8] = {FRR, FFR, FFL, FLL, BLL, BBL, BBR, BRR};
+static const int KING_DIRS[8]   = {RT, LT, FW, BW, FL, BR, FR, BL}; // Note this order is deliberate for setup.
+static const int KNIGHT_DIRS[8] = {FRR, FFR, FFL, FLL, BLL, BBL, BBR, BRR};
 
 // Move modes
 static const int EP_MODE      = 0xA0;

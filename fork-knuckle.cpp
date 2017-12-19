@@ -27,8 +27,6 @@ char *(names[MAXTIM])={"pintest", "contact", "castle", "ep-capt", "capture",
 #define TIME(A)
 #endif
 
-/* Zobris key layout */
-#define Zobrist(A,B) (*(int64_t *) (Zob[(A)-WHITE] + (B)))
 #define XSIZE (8*1024)
 union _bucket
 {
@@ -50,7 +48,11 @@ struct P {
 int rseed = 87105015;
     uint64_t accept[30], reject[30], hit[30], miss[30];
 char *Zob[2*NPCE];
-unsigned char
+
+    // Zobrist key for given piece and pos.
+    int64_t Zobrist(const int piece, const int pos) const { return *(int64_t *)(Zob[piece-WHITE] + pos); }
+    
+    unsigned char
         pc[NPCE*4+1], /* piece list, equivalenced with various piece info  */
         brd[0xBC+2*0xEF+1],      /* contains play board and 2 delta boards  */
         CasRights,               /* one bit per castling, clear if allowed */
@@ -94,15 +96,10 @@ char Keys[1040];
         static int mk_move(const int from_pos, const int to_pos, const int mode) { return (mode << MODE_SHIFT) | mk_move(from_pos, to_pos); }
 
         uint32_t move;
-        // const uint8_t from_pos;
-        // const uint8_t to_pos;
-        // uint8_t unused;
-        // const uint8_t mode;
 
     public:
         Move(const uint8_t from_pos, const uint8_t to_pos, const uint8_t mode) :
             move(mk_move(from_pos, to_pos, mode)) {}
-            //from_pos(from_pos), to_pos(to_pos), mode(mode) {}
 
         Move(const uint8_t from_pos, const uint8_t to_pos) :
             move(mk_move(from_pos, to_pos)) {}
@@ -160,10 +157,10 @@ char Keys[1040];
 
         for(int i=0; i<8; i++) {
             /* in all directions */
-            DIR_TO_CAPT_CODE[KNIGHT_ROSE[i]] = C_KNIGHT;
-            delta_vec[KNIGHT_ROSE[i]] = KNIGHT_ROSE[i];
+            DIR_TO_CAPT_CODE[KNIGHT_DIRS[i]] = C_KNIGHT;
+            delta_vec[KNIGHT_DIRS[i]] = KNIGHT_DIRS[i];
             /* distant captures (can be blocked) */
-            int k = QUEEN_DIR[i];
+            int k = KING_DIRS[i];
             int m = i<4 ? C_ORTH : C_DIAG;
             int y = 0;  
             for(int j=0; j<7; j++) {
@@ -193,7 +190,9 @@ char Keys[1040];
         }
 
         // Capture codes
-        for(int piece_index = 0; piece_index < NPCE; piece_index++) { index_to_capt_code[piece_index] = KIND_TO_CAPT_CODE[index_to_kind[piece_index]]; }
+        for(int piece_index = 0; piece_index < NPCE; piece_index++) {
+            index_to_capt_code[piece_index] = KIND_TO_CAPT_CODE[index_to_kind[piece_index]];
+        }
 
         // Castling spoilers (King and both original Rooks) - not sure what the shifts are for???
         cstl[KING_INDEX] = WHITE;
@@ -212,6 +211,7 @@ char Keys[1040];
         color_to_first_slider_index[BLACK] = QUEEN_INDEX + WHITE;
         color_to_first_pawn_index[BLACK]   = PAWNS_INDEX + WHITE;
 
+        // Why isn't Zob initialised for all pieces - ah, it's initialised from FEN parsing, always.
         Zob[DUMMY-WHITE] = Keys-0x22;
     }
 
@@ -936,20 +936,41 @@ char Keys[1040];
             });
         
         return 0;
-    }    
+    }
 
-void perft(const int color, Move last_move, int depth, int d)
-{   /* recursive perft, with in-lined make/unmake */
-    int i, j, h, oldpiece, store;
-    int piece, victim, from, to, capt, mode;
-    int SavRights = CasRights, Index;
-    uint64_t ocnt=count, OldKey = HashKey, OldHKey = HighKey, SavCnt;
+    void update_hash_key(const int piece, const int pos) { 
+        HashKey ^= Zobrist(piece, pos);
+        HighKey ^= Zobrist(piece, pos+8);
+    }
+
+    void update_hash_key_for_promo(const int piece, const int newpiece, const int pos) {
+        update_hash_key(piece, pos);
+        update_hash_key(newpiece, pos);
+    }
+
+    void update_hash_key_for_move(const int piece, const int from, const int to) {
+        update_hash_key(piece, from);
+        update_hash_key(piece, to);
+    }
+
+    void update_hash_key_for_move(const int piece, const int from, const int to, const int capt_piece, const int capt_pos) {
+        update_hash_key_for_move(piece, from, to);
+        update_hash_key(capt_piece, capt_pos);
+    }
+
+void perft(const int color, Move last_move, int depth, int d) {
+    /* recursive perft, with in-lined make/unmake */
+    int oldpiece, store;
+    int SavRights = CasRights;
+    uint64_t OldKey = HashKey, OldHKey = HighKey, SavCnt;
     union _bucket *Bucket;
 
     TIME(17)
     const int first_move = move_stack.msp; /* new area on move stack */
+
     CheckData check_data;
     gen_moves(color, last_move, d, check_data); /* generate moves */
+
     nodecount++;
 
 #ifndef NO_BULK_COUNTS
@@ -959,28 +980,34 @@ void perft(const int color, Move last_move, int depth, int d)
     }
 #endif //def NO_BULK_COUNTS
     
-    for(i = first_move; i < move_stack.msp; i++)  /* go through all moves */
-    {
-      /* fetch move from move stack */
-        from = move_stack.at(i).from();
-        to = capt = move_stack.at(i).to();
-        mode = move_stack.at(i).mode();
-        path[d] = move_stack.at(i);
-        piece  = board[from];
+    for(int i = first_move; i < move_stack.msp; i++) {
+        const int from = move_stack.at(i).from();
+        const int to = move_stack.at(i).to();
+        int capt_pos = to;
+        const int mode = move_stack.at(i).mode();
+        int piece = board[from];
+        int piece_index = piece_to_index(piece);
 
-        Index = 0;
-        if(mode)
-        {   /* e.p. or castling, usually skipped  */
-            /* e.p.:shift capture square one rank */
-            if(mode < EP_MODE)
-            {   if(((board[to+RT]^piece) & (COLOR|PAWNS_INDEX)) == COLOR ||
+        path[d] = move_stack.at(i);
+
+        int Index = 0;
+
+        int rook_from, rook_to; // For castling
+
+        // Check for special moves.
+        if(mode) {
+            if(mode < EP_MODE) {
+                // 2-square pawn move - change the hash if en-passant is possible.
+                if(((board[to+RT]^piece) & (COLOR|PAWNS_INDEX)) == COLOR ||
                    ((board[to+LT]^piece) & (COLOR|PAWNS_INDEX)) == COLOR)
                     Index = mode * 76265;
             } else if(mode == EP_MODE) {
-                capt ^= 0x10; // trick to go backwards one square
+                // En-passant capture - capture square is not the same as the to square.
+                capt_pos ^= 0x10;
             } else if(mode <= PROMO_MODE_Q) {
-                // Promotion
-                oldpiece = piece; index_to_pos[piece-WHITE] = 0;
+                // Promotion - replace pawn with promo piece kind
+                oldpiece = piece;
+                index_to_pos[piece_index] = 0;
                 const int promo_kind = mode - PROMO_MODE;
                 if(promo_kind == KNIGHT_KIND) {
                     // Knight into knight list
@@ -989,37 +1016,32 @@ void perft(const int color, Move last_move, int depth, int d)
                     // Sliders into sliders list
                     piece = --color_to_first_slider_index[color]+WHITE;
                 }
-                index_to_pos[piece-WHITE]  = from;
-                index_to_kind[piece-WHITE] = promo_kind;
-                index_to_capt_code[piece-WHITE] = KIND_TO_CAPT_CODE[promo_kind];
-                Zob[piece-WHITE]  = Keys + 128*promo_kind + (color&BLACK)/8 - 0x22;
-                HashKey ^= Zobrist(piece, from) ^ Zobrist(oldpiece, from);
-                HighKey ^= Zobrist(piece, from+8) ^ Zobrist(oldpiece, from+8);
+                piece_index = piece_to_index(piece);
+                index_to_pos[piece_index]  = from;
+                index_to_kind[piece_index] = promo_kind;
+                index_to_capt_code[piece_index] = KIND_TO_CAPT_CODE[promo_kind];
+                Zob[piece_index]  = Keys + 128*promo_kind + (color&BLACK)/8 - 0x22;
+                update_hash_key_for_promo(oldpiece, piece, from);
                 Index += 14457159; /* prevent hits by non-promotion moves */
-            } else {   /* castling, determine Rook move  */
-                j = mode - CAS_MODE + from;
-                h = (from+to) >> 1;
+            } else {
+                // Castling - determine Rook move.
+                rook_from = mode - CAS_MODE + from;
+                rook_to = (from+to) >> 1;
                 /* move Rook                      */
-                board[h] = board[j];
-                board[j] = DUMMY;
-                index_to_pos[board[h]-WHITE] = h;
-                HashKey ^= Zobrist(board[h],h) ^ Zobrist(board[h],j);
-                HighKey ^= Zobrist(board[h],h+8) ^ Zobrist(board[h],j+8);
+                board[rook_to] = board[rook_from];
+                board[rook_from] = DUMMY;
+                index_to_pos[board[rook_to]-WHITE] = rook_to;
+                update_hash_key_for_move(board[rook_to], rook_from, rook_to);
             }
         }
 
-        victim = board[capt];
-        CasRights |= cstl[piece-WHITE] | cstl[victim-WHITE];
+        const int capt_piece = board[capt_pos];
+        CasRights |= cstl[piece_index] | cstl[piece_to_index(capt_piece)];
 
         if(depth != 1 && HashFlag)
         {
             SavCnt = count;
-            HashKey ^= Zobrist(piece,from)  /* key update for normal move */
-                     ^ Zobrist(piece,to)
-                     ^ Zobrist(victim,capt);
-            HighKey ^= Zobrist(piece,from+8)  /* key update for normal move */
-                     ^ Zobrist(piece,to+8)
-                     ^ Zobrist(victim,capt+8);
+            update_hash_key_for_move(piece, from, to, capt_piece, capt_pos);
             Index += (CasRights << 4) +color*919581;
             if(depth>2) {
                 path[d] = move_stack.at(i); // ???
@@ -1059,14 +1081,14 @@ void perft(const int color, Move last_move, int depth, int d)
 minor:
       /* perform move, in piece list and on board */
         /* update board position */
-        board[capt] = board[from] = DUMMY;
+        board[capt_pos] = board[from] = DUMMY;
         board[to] = piece;
 
         /* update piece location in piece list    */
-        index_to_pos[piece-WHITE] = to;
+        index_to_pos[piece_index] = to;
 
         /* remove captured piece from piece list  */
-        index_to_pos[victim-WHITE] = 0;
+        index_to_pos[piece_to_index(capt_piece)] = 0;
 
         /* recursion or count end leaf */
         if(depth == 1) {
@@ -1089,32 +1111,32 @@ minor:
         /* retract move */
 
         /* restore piece list */
-        index_to_pos[piece-WHITE] = from;
-        index_to_pos[victim-WHITE] = capt;
+        index_to_pos[piece_index] = from;
+        index_to_pos[piece_to_index(capt_piece)] = capt_pos;
 
         /* restore board */
         board[to] = DUMMY;      /* restore board  */
-        board[capt] = victim;
+        board[capt_pos] = capt_piece;
         board[from] = piece;
 
 quick:
         if(EP_MODE < mode) {           // Castling or promo
             if(mode <= PROMO_MODE_Q) { // Promo
                 // Demote to Pawn again.
-                if(index_to_kind[piece-WHITE] == KNIGHT_KIND) {
+                if(index_to_kind[piece_index] == KNIGHT_KIND) {
                     color_to_last_knight_index[color]--;
                 } else {
                     color_to_first_slider_index[color]++;
                 }
-                index_to_kind[piece-WHITE] = QUEEN_KIND; // put Q back for hash store ???
                 piece = oldpiece;
-                index_to_pos[piece-WHITE] = from;
+                piece_index = piece_to_index(piece);
+                index_to_pos[piece_index] = from;
                 board[from] = piece;
             } else {                   // Castling
                 /* undo Rook move */
-                board[j] = board[h];
-                board[h] = DUMMY;
-                index_to_pos[board[j]-WHITE] = j;
+                board[rook_from] = board[rook_to];
+                board[rook_to] = DUMMY;
+                index_to_pos[board[rook_from]-WHITE] = rook_from;
             }
         }
 
@@ -1129,17 +1151,17 @@ quick:
 
     int checker_pos(const int color) {
         for(int i=0; i<8; i++) {
-            int v = KING_ROSE[i];
+            int v = KING_DIRS[i];
             int x = index_to_pos[king_index(color)] + v;
             int piece = board[x];
             if((piece & COLOR) == other_color(color)) {
-                if(index_to_capt_code[piece-WHITE] & DIR_TO_CAPT_CODE[-v]) return x;
+                if(index_to_capt_code[piece_to_index(piece)] & DIR_TO_CAPT_CODE[-v]) return x;
             }
-            v = KNIGHT_ROSE[i];
+            v = KNIGHT_DIRS[i];
             x = index_to_pos[king_index(color)] + v;
             piece = board[x];
             if((piece & COLOR) == other_color(color)) {
-                if(index_to_capt_code[piece-WHITE] & DIR_TO_CAPT_CODE[-v]) return x;
+                if(index_to_capt_code[piece_to_index(piece)] & DIR_TO_CAPT_CODE[-v]) return x;
             }
         }
         return 0;
@@ -1178,29 +1200,27 @@ quick:
         for(int i=128; i<1040; i++) Keys[i] = rand()>>6;
     }
 
-/**
- * @return color
- */
-int setup_board(const char* FEN) {
-    memset(pc, 0, sizeof(pc));
-    memset(brd, 0, sizeof(brd));
-
-    noUnder = 0; // for strict perft adherence
-    
-    delta_init();
-
-    piece_init();
-
-    board_init(board);
-
-    int color = ReadFEN(FEN);
-
-    setup();
-                                          
-    pboard(board, 12, 0);
-
-    return color;
-}
+    // @return color
+    int setup_board(const char* FEN) {
+        memset(pc, 0, sizeof(pc));
+        memset(brd, 0, sizeof(brd));
+        
+        noUnder = 0; // for strict perft adherence
+        
+        delta_init();
+        
+        piece_init();
+        
+        board_init(board);
+        
+        int color = ReadFEN(FEN);
+        
+        setup();
+        
+        pboard(board, 12, 0);
+        
+        return color;
+    }
     
 }; //class P
 
