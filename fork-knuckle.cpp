@@ -472,15 +472,7 @@ char Keys[1040];
             });                                                         \
     } while(false)  
     
-#   define FOREACH_KNIGHT_OR_KING3(color, block) do {                    \
-        const int color__ = (color);                                    \
-        FOREACH_PIECE(king_index(color__), last_knight_index(color__), { \
-                const int knight_or_king_index = piece_index__; const int knight_or_king_pos = piece_pos__; \
-                do block while(false);                                  \
-            });                                                         \
-    } while(false)  
-    
-#   define FOREACH_KNIGHT_OR_KING2(color, block) do {                    \
+#   define FOREACH_KNIGHT_OR_KING(color, block) do {                    \
         const int color__ = (color);                                    \
         FOREACH_PIECE2(king_piece(color__), color_to_last_knight_piece[color__], { \
                 const int knight_or_king_piece = piece__; const int knight_or_king_pos = piece_pos__; \
@@ -962,7 +954,7 @@ char Keys[1040];
         if(is_pawn(color, piece_pos+bw+LT)) { return 2; }
 
         // Check knights and opposition king.
-        FOREACH_KNIGHT_OR_KING2(color, {
+        FOREACH_KNIGHT_OR_KING(color, {
                 if(is_attacking_non_slider2(knight_or_king_piece, knight_or_king_pos, piece_pos)) { return knight_or_king_piece+WHITE + 256; }
             });
 
