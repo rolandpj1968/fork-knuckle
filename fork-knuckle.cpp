@@ -480,14 +480,6 @@ char Keys[1040];
             });                                                         \
     } while(false)  
     
-#   define FOREACH_SLIDER(color, block) do {                            \
-        const int color__ = (color);                                    \
-        FOREACH_PIECE(first_slider_index(color__), last_slider_index(color__), { \
-                const int slider_index = piece_index__; const int slider_pos = piece_pos__; \
-                do block while(false);                                  \
-            });                                                         \
-    } while(false)  
-    
 #   define FOREACH_SLIDER2(color, block) do {                            \
         const int color__ = (color);                                    \
         FOREACH_PIECE(first_slider_index(color__), last_slider_index(color__), { \
@@ -542,18 +534,6 @@ char Keys[1040];
         return is_attacking_weak(piece_index, piece_pos, target_pos);
     }
 
-    // @return true iff the given slider piece is attacking (or defending) the target position.
-    bool is_attacking_slider(const int slider_index, const int slider_pos, const int target_pos) const {
-        if(is_attacking_weak(slider_index, slider_pos, target_pos)) {
-            int dir = delta_vec[slider_pos - target_pos]; // Single square move.
-            // Baby steps from target piece back towards slider.
-            int between_pos; for(between_pos = target_pos + dir; is_empty(between_pos); between_pos += dir) { /*nada*/ }
-            // Check that first piece we hit was the slider - i.e. no other pieces in between.
-            if(slider_pos == between_pos) { return true; }
-        }
-        return false;
-    }
-    
     // @return true iff the given slider piece is attacking (or defending) the target position.
     bool is_attacking_slider2(const int slider, const int slider_pos, const int target_pos) const {
         if(is_attacking_weak2(slider, slider_pos, target_pos)) {
