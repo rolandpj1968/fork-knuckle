@@ -78,7 +78,7 @@ char          *const delta_vec  = ((char *) brd+1+0xBC+0xEF+0x77); /* step to br
 char Keys[1040];
 int path[100];
     uint32_t stack[1024];
-    int msp = 0, Kmoves, Split, epSqr, HashSize, HashSection;
+    int msp = 0, Split, epSqr, HashSize, HashSection;
 uint64_t HashKey=8729767686LL, HighKey=1234567890LL, count, epcnt, xcnt, ckcnt, cascnt, promcnt, nodecount;
 FILE *f;
 clock_t ttt[30];
@@ -884,8 +884,6 @@ clock_t ttt[30];
             }
         }
         
-        Kmoves = msp; // Save first king move.
-
         // King moves (always generated).
         gen_king_moves(color, check_data);
 
@@ -929,7 +927,7 @@ void perft(const int color, int last_move, int depth, int d)
 {   /* recursive perft, with in-lined make/unmake */
     int i, j, h, oldpiece, store;
     int piece, victim, from, to, capt, mode;
-    int SavRights = CasRights, lkm, Index;
+    int SavRights = CasRights, Index;
     uint64_t ocnt=count, OldKey = HashKey, OldHKey = HighKey, SavCnt;
     union _bucket *Bucket;
     int local_count = 0, local_n_moves = 0;
@@ -939,7 +937,7 @@ void perft(const int color, int last_move, int depth, int d)
     CheckData check_data;
     gen_moves(color, last_move, d, check_data); /* generate moves */
     nodecount++;
-    lkm = Kmoves; local_n_moves = msp - first_move;
+    local_n_moves = msp - first_move;
 
 #ifndef NO_BULK_COUNTS
     if(depth == 1) {
