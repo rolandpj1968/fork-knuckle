@@ -496,25 +496,10 @@ char Keys[1040];
     //   the target position - we still have to check that no other pieces are sitting in-between.
     // @return true iff the given piece is attacking/defending the target position,
     //                including slider pieces with another piece in between.
-    bool is_attacking_weak(const int piece_index, const int piece_pos, const int target_pos) const {
-        int piece_capt_code = piece_to_capt_code[piece_index+WHITE];
-        int dir_capt_code = DIR_TO_CAPT_CODE[piece_pos - target_pos];
-        return is_common_capt_code(piece_capt_code, dir_capt_code);
-    }
-
-    // For sliders this is not a strong enough check to ensure the piece can get through to
-    //   the target position - we still have to check that no other pieces are sitting in-between.
-    // @return true iff the given piece is attacking/defending the target position,
-    //                including slider pieces with another piece in between.
     bool is_attacking_weak2(const int piece, const int piece_pos, const int target_pos) const {
         int piece_capt_code = piece_to_capt_code[piece];
         int dir_capt_code = DIR_TO_CAPT_CODE[piece_pos - target_pos];
         return is_common_capt_code(piece_capt_code, dir_capt_code);
-    }
-
-    // @return true iff the given non-slider piece is attacking (or defending) the target position.
-    bool is_attacking_non_slider(const int piece_index, const int piece_pos, const int target_pos) const {
-        return is_attacking_weak(piece_index, piece_pos, target_pos);
     }
 
     // @return true iff the given non-slider piece is attacking (or defending) the target position.
