@@ -60,10 +60,12 @@ char *Zob[2*NPCE];
 
     // Various maps from piece index (in pieces list) to various other piece data
     unsigned char *const index_to_kind = (pc+1);
-unsigned char *const cstl = (pc+1+NPCE);
+    unsigned char *const piece_to_kind = (pc+1-WHITE);
+    unsigned char *const cstl = (pc+1+NPCE);
     unsigned char *const index_to_pos = (pc+1+NPCE*2);
     unsigned char *const piece_to_pos = (pc+1+NPCE*2-WHITE);
     unsigned char *const index_to_capt_code = (pc+1+NPCE*3);
+    unsigned char *const piece_to_capt_code = (pc+1+NPCE*3-WHITE);
 
 /* Piece counts hidden in the unused Pawn section, indexed by color */
 unsigned char *const color_to_last_knight_index  = (index_to_capt_code-4);
@@ -175,28 +177,38 @@ char Keys[1040];
     }
 
     // Initialize piece list to starting position.
+    // Not uses cos we always supply FEN, but missing Zob init?
     void piece_init(void) {
 
         // Piece kind and position
         for(int file = 0; file < 8; file++) {
-            index_to_kind[BACK_ROW_INDEXES[file]]       = BACK_ROW_KINDS[file];
-            index_to_kind[BACK_ROW_INDEXES[file]+WHITE] = BACK_ROW_KINDS[file];
-            index_to_kind[file+PAWNS_INDEX]             = B_PAWN_KIND;
-            index_to_kind[file+PAWNS_INDEX+WHITE]       = W_PAWN_KIND;
+            // index_to_kind[BACK_ROW_INDEXES[file]]       = BACK_ROW_KINDS[file];
+            // index_to_kind[BACK_ROW_INDEXES[file]+WHITE] = BACK_ROW_KINDS[file];
+            // index_to_kind[file+PAWNS_INDEX]             = B_PAWN_KIND;
+            // index_to_kind[file+PAWNS_INDEX+WHITE]       = W_PAWN_KIND;
+            piece_to_kind[BACK_ROW_INDEXES[file]+WHITE] = BACK_ROW_KINDS[file];
+            piece_to_kind[BACK_ROW_INDEXES[file]+BLACK] = BACK_ROW_KINDS[file];
+            piece_to_kind[file+PAWNS_INDEX+WHITE]       = B_PAWN_KIND; // ??? wrong way round?
+            piece_to_kind[file+PAWNS_INDEX+BLACK]       = W_PAWN_KIND;
 
-            index_to_pos[BACK_ROW_INDEXES[file]]        = file+0x22;
-            index_to_pos[BACK_ROW_INDEXES[file]+WHITE]  = file+0x92;
-            index_to_pos[file+PAWNS_INDEX]              = file+0x32;
-            index_to_pos[file+PAWNS_INDEX+WHITE]        = file+0x82;
+            // index_to_pos[BACK_ROW_INDEXES[file]]        = file+0x22;
+            // index_to_pos[BACK_ROW_INDEXES[file]+WHITE]  = file+0x92;
+            // index_to_pos[file+PAWNS_INDEX]              = file+0x32;
+            // index_to_pos[file+PAWNS_INDEX+WHITE]        = file+0x82;
+            piece_to_pos[BACK_ROW_INDEXES[file]+WHITE]  = file+0x22;
+            piece_to_pos[BACK_ROW_INDEXES[file]+BLACK]  = file+0x92;
+            piece_to_pos[file+PAWNS_INDEX+WHITE]        = file+0x32;
+            piece_to_pos[file+PAWNS_INDEX+BLACK]        = file+0x82;
         }
 
         // Capture codes
         for(int piece_index = 0; piece_index < NPCE; piece_index++) {
-            index_to_capt_code[piece_index] = KIND_TO_CAPT_CODE[index_to_kind[piece_index]];
+            //index_to_capt_code[piece_index] = KIND_TO_CAPT_CODE[index_to_kind[piece_index]];
+            index_to_capt_code[piece_index] = KIND_TO_CAPT_CODE[piece_to_kind[piece_index+WHITE]];
         }
 
         // Castling spoilers (King and both original Rooks) - not sure what the shifts are for???
-        cstl[KING_INDEX] = WHITE;
+        cstl[KING_INDEX]           = WHITE;
         cstl[Q_ROOK_INDEX]         = WHITE>>2;
         cstl[K_ROOK_INDEX]         = WHITE>>4;
         cstl[KING_INDEX + WHITE]   = BLACK;
@@ -238,7 +250,8 @@ char Keys[1040];
         for(int i=n-1; i>=0; i--) {
             for(int j=0; j<n; j++) {
                 if(bin) { printf(" %2x", b[16*i+j]&0xFF); }
-                else    { printf(" %c", (b[16*i+j]&0xFF)==GUARD ? '-' : asc[index_to_kind[(b[16*i+j]&0x7F)-WHITE]+((b[16*i+j]&WHITE)>>1)]); }
+                //else    { printf(" %c", (b[16*i+j]&0xFF)==GUARD ? '-' : asc[index_to_kind[(b[16*i+j]&0x7F)-WHITE]+((b[16*i+j]&WHITE)>>1)]); }
+                else    { printf(" %c", (b[16*i+j]&0xFF)==GUARD ? '-' : asc[piece_to_kind[(b[16*i+j]&0x7F)]+((b[16*i+j]&WHITE)>>1)]); }
             }
             printf("\n");
         }
@@ -307,8 +320,9 @@ char Keys[1040];
                         return -15;
                     }
                     //index_to_pos[nr] = ((file +  16*row) & 0x77) + 0x22;
-                    piece_to_pos[WHITE+nr] = ((file +  16*row) & 0x77) + 0x22;
-                    index_to_kind[nr] = piece_kind;
+                    piece_to_pos[nr+WHITE] = ((file +  16*row) & 0x77) + 0x22;
+                    //index_to_kind[nr] = piece_kind;
+                    piece_to_kind[nr+WHITE] = piece_kind;
                     index_to_capt_code[nr] = KIND_TO_CAPT_CODE[piece_kind];
                     Zob[nr]  = Keys + 128*piece_kind + (color&BLACK)/8 - 0x22;
                     cstl[nr] = cc;
@@ -698,7 +712,8 @@ char Keys[1040];
                 const int attacker_piece = board[attacker_pos];
                 if(!is_color(color, attacker_piece)) { // Note - is_color is true for both colors for guards
                     const int attacker_index = piece_to_index(attacker_piece);
-                    const int attacker_kind = index_to_kind[attacker_index];
+                    //const int attacker_kind = index_to_kind[attacker_index];
+                    const int attacker_kind = piece_to_kind[attacker_piece];
                     //printf("                                                            RPJ!!!! Bingo EP into check - attacker kind %d\n", attacker_kind);
                     return attacker_kind == ROOK_KIND || attacker_kind == QUEEN_KIND;
                 }
@@ -801,7 +816,8 @@ char Keys[1040];
         } while(false)
             
         FOREACH_SLIDER(color, {
-                const int slider_kind = index_to_kind[slider_index];
+                //const int slider_kind = index_to_kind[slider_index];
+                const int slider_kind = piece_to_kind[slider_index+WHITE];
 
                 if(slider_kind != BISHOP_KIND) {
                     // All 4 rook rays for Rook and Queen.
@@ -930,6 +946,9 @@ char Keys[1040];
 
     // @return true iff the piece of the given piece index is a pawn.
     bool is_pawn_piece_index(const int piece_index) const { return index_to_kind[piece_index] < KNIGHT_KIND; }
+
+    // @return true iff the given piece is a pawn.
+    bool is_pawn_piece(const int piece) const { return piece_to_kind[piece] < KNIGHT_KIND; }
     
 
     // Full check for captures on square x by all opponent pieces.
@@ -1061,7 +1080,8 @@ char Keys[1040];
                 piece_index = piece_to_index(piece);
                 //index_to_pos[piece_index]  = from;
                 piece_to_pos[piece]  = from;
-                index_to_kind[piece_index] = promo_kind;
+                //index_to_kind[piece_index] = promo_kind;
+                piece_to_kind[piece] = promo_kind;
                 index_to_capt_code[piece_index] = KIND_TO_CAPT_CODE[promo_kind];
                 Zob[piece_index]  = Keys + 128*promo_kind + (color&BLACK)/8 - 0x22;
                 update_hash_key_for_promo(orig_piece, piece, from);
@@ -1086,7 +1106,8 @@ char Keys[1040];
         if(EP_MODE < mode) {           // Castling or promo
             if(mode <= PROMO_MODE_Q) { // Promo
                 // Demote to Pawn again.
-                if(index_to_kind[piece_index] == KNIGHT_KIND) {
+                //if(index_to_kind[piece_index] == KNIGHT_KIND) {
+                if(piece_to_kind[piece_index+WHITE] == KNIGHT_KIND) {
                     color_to_last_knight_index[color]--;
                 } else {
                     color_to_first_slider_index[color]++;
