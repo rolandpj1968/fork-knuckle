@@ -67,9 +67,12 @@ char *Zob[2*NPCE];
     unsigned char *const piece_to_capt_code = (pc+1+NPCE*3-WHITE);
 
 /* Piece counts hidden in the unused Pawn section, indexed by color */
-unsigned char *const color_to_last_knight_index  = (index_to_capt_code-4);
-unsigned char *const color_to_first_slider_index = (index_to_capt_code-3);
-unsigned char *const color_to_first_pawn_index   = (index_to_capt_code-2);
+// unsigned char *const color_to_last_knight_index  = (index_to_capt_code-4);
+// unsigned char *const color_to_first_slider_index = (index_to_capt_code-3);
+// unsigned char *const color_to_first_pawn_index   = (index_to_capt_code-2);
+unsigned char *const color_to_last_knight_index  = (piece_to_capt_code-4+WHITE);
+unsigned char *const color_to_first_slider_index = (piece_to_capt_code-3+WHITE);
+unsigned char *const color_to_first_pawn_index   = (piece_to_capt_code-2+WHITE);
 
 /* offset overlays to allow negative array subscripts      */
 /* and avoid cache collisions of these heavily used arrays */
@@ -198,7 +201,8 @@ char Keys[1040];
 
         // Capture codes
         for(int piece_index = 0; piece_index < NPCE; piece_index++) {
-            index_to_capt_code[piece_index] = KIND_TO_CAPT_CODE[piece_to_kind[piece_index+WHITE]];
+            //index_to_capt_code[piece_index] = KIND_TO_CAPT_CODE[piece_to_kind[piece_index+WHITE]];
+            piece_to_capt_code[piece_index+WHITE] = KIND_TO_CAPT_CODE[piece_to_kind[piece_index+WHITE]];
         }
 
         // Castling spoilers (King and both original Rooks) - not sure what the shifts are for???
@@ -315,7 +319,8 @@ char Keys[1040];
                     //index_to_pos[nr] = ((file +  16*row) & 0x77) + 0x22;
                     piece_to_pos[nr+WHITE] = ((file +  16*row) & 0x77) + 0x22;
                     piece_to_kind[nr+WHITE] = piece_kind;
-                    index_to_capt_code[nr] = KIND_TO_CAPT_CODE[piece_kind];
+                    //index_to_capt_code[nr] = KIND_TO_CAPT_CODE[piece_kind];
+                    piece_to_capt_code[nr+WHITE] = KIND_TO_CAPT_CODE[piece_kind];
                     Zob[nr]  = Keys + 128*piece_kind + (color&BLACK)/8 - 0x22;
                     cstl[nr] = cc;
                     CasRights |= cc;       /* remember K & R on original location */
@@ -520,7 +525,8 @@ char Keys[1040];
     // @return true iff the given piece is attacking/defending the target position,
     //                including slider pieces with another piece in between.
     bool is_attacking_weak(const int piece_index, const int piece_pos, const int target_pos) const {
-        int piece_capt_code = index_to_capt_code[piece_index];
+        //int piece_capt_code = index_to_capt_code[piece_index];
+        int piece_capt_code = piece_to_capt_code[piece_index+WHITE];
         int dir_capt_code = DIR_TO_CAPT_CODE[piece_pos - target_pos];
         return is_common_capt_code(piece_capt_code, dir_capt_code);
     }
@@ -576,7 +582,8 @@ char Keys[1040];
 
     // @return true iff the given piece pos is on the given slider's ray (regardless of whether there are other pieces in between).
     bool is_on_slider_ray(const int piece_pos, const int slider_pos, const int slider_index) const {
-        return DIR_TO_CAPT_CODE[slider_pos-piece_pos] & index_to_capt_code[slider_index] & C_DISTANT;
+        //return DIR_TO_CAPT_CODE[slider_pos-piece_pos] & index_to_capt_code[slider_index] & C_DISTANT;
+        return DIR_TO_CAPT_CODE[slider_pos-piece_pos] & piece_to_capt_code[slider_index+WHITE] & C_DISTANT;
     }
 
     // All pinned pieces are removed from lists.
@@ -628,7 +635,8 @@ char Keys[1040];
                                     if(pinned_pos+fw+RT == slider_pos) { push_pawn_move(color, pinned_pos, pinned_pos+fw+RT); }
                                     if(pinned_pos+fw+LT == slider_pos) { push_pawn_move(color, pinned_pos, pinned_pos+fw+LT); }
                                 }
-                            } else if(index_to_capt_code[pinned_piece_index]&DIR_TO_CAPT_CODE[slider_pos-king_pos]&C_DISTANT) {
+                                //} else if(index_to_capt_code[pinned_piece_index]&DIR_TO_CAPT_CODE[slider_pos-king_pos]&C_DISTANT) {
+                            } else if(piece_to_capt_code[pinned_piece]&DIR_TO_CAPT_CODE[slider_pos-king_pos]&C_DISTANT) {
                                 // Slider moves along pin ray */
                                 int to_pos = pinned_pos;
                                 do { // Moves up to capturing pinner.
@@ -655,7 +663,8 @@ char Keys[1040];
         int king_pos = this->king_pos(color);
         int last_to = last_move.to();
 
-        if(DIR_TO_CAPT_CODE[king_pos - last_to] & index_to_capt_code[board[last_to]-WHITE] & C_CONTACT) {
+        //if(DIR_TO_CAPT_CODE[king_pos - last_to] & index_to_capt_code[board[last_to]-WHITE] & C_CONTACT) {
+        if(DIR_TO_CAPT_CODE[king_pos - last_to] & piece_to_capt_code[board[last_to]] & C_CONTACT) {
             check_data.add_contact_checker(last_to, delta_vec[last_to - king_pos]);
         }
     }
@@ -1069,7 +1078,8 @@ char Keys[1040];
                 //index_to_pos[piece_index]  = from;
                 piece_to_pos[piece]  = from;
                 piece_to_kind[piece] = promo_kind;
-                index_to_capt_code[piece_index] = KIND_TO_CAPT_CODE[promo_kind];
+                //index_to_capt_code[piece_index] = KIND_TO_CAPT_CODE[promo_kind];
+                piece_to_capt_code[piece] = KIND_TO_CAPT_CODE[promo_kind];
                 Zob[piece_index]  = Keys + 128*promo_kind + (color&BLACK)/8 - 0x22;
                 update_hash_key_for_promo(orig_piece, piece, from);
                 Index += 14457159; // Prevent clash with non-promotion moves.
@@ -1218,14 +1228,16 @@ char Keys[1040];
             int x = piece_to_pos[king_piece(color)] + v;
             int piece = board[x];
             if((piece & COLOR) == other_color(color)) {
-                if(index_to_capt_code[piece_to_index(piece)] & DIR_TO_CAPT_CODE[-v]) return x;
+                //if(index_to_capt_code[piece_to_index(piece)] & DIR_TO_CAPT_CODE[-v]) return x;
+                if(piece_to_capt_code[piece] & DIR_TO_CAPT_CODE[-v]) return x;
             }
             v = KNIGHT_DIRS[i];
             //x = index_to_pos[king_index(color)] + v;
             x = piece_to_pos[king_piece(color)] + v;
             piece = board[x];
             if((piece & COLOR) == other_color(color)) {
-                if(index_to_capt_code[piece_to_index(piece)] & DIR_TO_CAPT_CODE[-v]) return x;
+                //if(index_to_capt_code[piece_to_index(piece)] & DIR_TO_CAPT_CODE[-v]) return x;
+                if(piece_to_capt_code[piece] & DIR_TO_CAPT_CODE[-v]) return x;
             }
         }
         return 0;
