@@ -65,8 +65,9 @@ char *Zob[2*NPCE];
     unsigned char *const piece_to_capt_code = (pc+1+NPCE*3-WHITE);
 
 /* Piece counts hidden in the unused Pawn section, indexed by color */
-unsigned char *const color_to_last_knight_index  = (piece_to_capt_code-4+WHITE);
-unsigned char *const color_to_first_slider_index = (piece_to_capt_code-3+WHITE);
+unsigned char *const color_to_last_knight_piece  = (piece_to_capt_code-4+WHITE);
+    //unsigned char *const color_to_first_slider_index = (piece_to_capt_code-3+WHITE);
+unsigned char *const color_to_first_slider_piece = (piece_to_capt_code-3+WHITE);
 unsigned char *const color_to_first_pawn_index   = (piece_to_capt_code-2+WHITE);
 
 /* offset overlays to allow negative array subscripts      */
@@ -205,11 +206,13 @@ char Keys[1040];
 
         // Piece indexes (can change when we compactify lists, or promote).
         // Doesn't look like any compaction is done at present.
-        color_to_last_knight_index[WHITE]  = K_KNIGHT_INDEX;
-        color_to_first_slider_index[WHITE] = QUEEN_INDEX;
+        color_to_last_knight_piece[WHITE]  = K_KNIGHT_INDEX + WHITE;
+        //color_to_first_slider_index[WHITE] = QUEEN_INDEX;
+        color_to_first_slider_piece[WHITE] = QUEEN_INDEX + WHITE;
         color_to_first_pawn_index[WHITE]   = PAWNS_INDEX;
-        color_to_last_knight_index[BLACK]  = K_KNIGHT_INDEX + WHITE;
-        color_to_first_slider_index[BLACK] = QUEEN_INDEX + WHITE;
+        color_to_last_knight_piece[BLACK]  = K_KNIGHT_INDEX + BLACK;
+        //color_to_first_slider_index[BLACK] = QUEEN_INDEX + WHITE;
+        color_to_first_slider_piece[BLACK] = QUEEN_INDEX + BLACK;
         color_to_first_pawn_index[BLACK]   = PAWNS_INDEX + WHITE;
 
         // Why isn't Zob initialised for all pieces - ah, it's initialised from FEN parsing, always.
@@ -248,10 +251,12 @@ char Keys[1040];
         
         /* remove all pieces */
         for(int i=0; i<NPCE; i++) piece_to_pos[i+WHITE] = piece_to_cstl[i+WHITE] = 0;
-        color_to_first_slider_index[WHITE] = 0x10;
-        color_to_first_slider_index[BLACK] = 0x30;
-        color_to_last_knight_index[WHITE]  = 0x00;
-        color_to_last_knight_index[BLACK]  = 0x20;
+        //color_to_first_slider_index[WHITE] = 0x10;
+        //color_to_first_slider_index[BLACK] = 0x30;
+        color_to_first_slider_piece[WHITE] = 0x10+WHITE;
+        color_to_first_slider_piece[BLACK] = 0x30+WHITE; // TODO sort out these constants
+        color_to_last_knight_piece[WHITE]  = 0x00+WHITE;
+        color_to_last_knight_piece[BLACK]  = 0x20+WHITE; // TODO BLACK
         color_to_first_pawn_index[WHITE]   = 0x18;
         color_to_first_pawn_index[BLACK]   = 0x38;
         CasRights = 0;
@@ -272,7 +277,7 @@ char Keys[1040];
                     int piece_kind = BISHOP_KIND, cc = 0, nr;
                     switch(c) {
                     case 'K':
-                        if(piece_to_pos[color] > 0) return -1;   // two kings illegal
+                        if(piece_to_pos[king_piece(color)] > 0) return -1;   // two kings illegal
                         piece_kind = KING_KIND;
                         nr = color-WHITE;
                         if(0x20*row == 7*(color-WHITE) && file == 4) cc = (color|color>>2|color>>4);
@@ -286,8 +291,10 @@ char Keys[1040];
                         }
                     case 'Q': piece_kind += 2;
                     case 'B': 
-                        if(--color_to_first_slider_index[color] <= color_to_last_knight_index[color]) return(-2);
-                        nr = color_to_first_slider_index[color];
+                        //if(--color_to_first_slider_index[color] <= color_to_last_knight_piece[color]-WHITE) return(-2);
+                        if(--color_to_first_slider_piece[color] <= color_to_last_knight_piece[color]) return(-2);
+                        //nr = color_to_first_slider_index[color];
+                        nr = color_to_first_slider_piece[color]-WHITE;
                         break;
                     case 'P': 
                         if(--color_to_first_pawn_index[color] < color-WHITE+FW) return(-4);
@@ -295,8 +302,9 @@ char Keys[1040];
                         piece_kind = color>>5;
                         break;
                     case 'N': 
-                        if(color_to_first_slider_index[color] <= ++color_to_last_knight_index[color]) return(-3);
-                        nr = color_to_last_knight_index[color];
+                        //if(color_to_first_slider_index[color] <= ++color_to_last_knight_piece[color]-WHITE) return(-3);
+                        if(color_to_first_slider_piece[color] <= ++color_to_last_knight_piece[color]) return(-3);
+                        nr = color_to_last_knight_piece[color]-WHITE;
                         piece_kind = KNIGHT_KIND;
                         break;
                     default:
@@ -429,10 +437,11 @@ char Keys[1040];
     static int first_knight_index(const int color) { return king_index(color) + 1; }
     
     // @return Piece index of the last knight.
-    int last_knight_index(const int color) const { return color_to_last_knight_index[color]; }
+    int last_knight_index(const int color) const { return color_to_last_knight_piece[color]-WHITE; }
 
     // @return Piece index of the first slider.
-    int first_slider_index(const int color) const { return color_to_first_slider_index[color]; }
+    //int first_slider_index(const int color) const { return color_to_first_slider_index[color]; }
+    int first_slider_index(const int color) const { return color_to_first_slider_piece[color]-WHITE; }
 
     // @return Piece index of the last slider.
     static int last_slider_index(const int color) { return base_index(color) + LAST_SLIDER_INDEX; }
@@ -1042,10 +1051,11 @@ char Keys[1040];
                 const int promo_kind = mode - PROMO_MODE;
                 if(promo_kind == KNIGHT_KIND) {
                     // Knight into knight list
-                    piece = ++color_to_last_knight_index[color]+WHITE;
+                    piece = ++color_to_last_knight_piece[color];
                 } else {
                     // Sliders into sliders list
-                    piece = --color_to_first_slider_index[color]+WHITE;
+                    //piece = --color_to_first_slider_index[color]+WHITE;
+                    piece = --color_to_first_slider_piece[color];
                 }
                 piece_index = piece_to_index(piece);
                 piece_to_pos[piece]  = from;
@@ -1074,9 +1084,10 @@ char Keys[1040];
             if(mode <= PROMO_MODE_Q) { // Promo
                 // Demote to Pawn again.
                 if(piece_to_kind[piece_index+WHITE] == KNIGHT_KIND) {
-                    color_to_last_knight_index[color]--;
+                    color_to_last_knight_piece[color]--;
                 } else {
-                    color_to_first_slider_index[color]++;
+                    //color_to_first_slider_index[color]++;
+                    color_to_first_slider_piece[color]++;
                 }
                 piece_to_pos[orig_piece] = from;
                 board[from] = orig_piece;
