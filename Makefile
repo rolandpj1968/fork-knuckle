@@ -1,2 +1,2 @@
-fork-knuckle.exe: fork-knuckle.cpp fork-knuckle.hpp
-	g++ -O -o fork-knuckle fork-knuckle.cpp
+fork-knuckle.exe: fork-knuckle.cpp fork-knuckle.hpp Makefile
+	g++ -g -o fork-knuckle fork-knuckle.cpp

@@ -365,13 +365,20 @@ clock_t ttt[30];
 
     // Push a pawn move to the move stack - and add promo flag where required.
     void push_pawn_move(const int color, const int from, const int to) {
-        int mode = 0; // No promo
         if(is_promo_rank(color, from)) {
             n_promos++;
-            mode = PROMO_MODE;
+            // Push a move for each promo kind
+            push_move(from, to, PROMO_MODE_Q);
+            if(!noUnder) {
+                push_move(from, to, PROMO_MODE_R);
+                push_move(from, to, PROMO_MODE_B);
+                push_move(from, to, PROMO_MODE_N);
+            }
+        } else {
+            push_move(from, to);
         }
-        push_move(from, to, mode); }
-
+    }
+        
     // Push a pawn move to the move stack - and add promo flag where required.
     void push_ep_pawn_move(const int from, const int to) { push_move(from, to, to); }
 
@@ -945,9 +952,10 @@ void perft(const int color, int last_move, int depth, int d)
     nodecount++;
     lep2 = ep2; lkm = Kmoves; local_n_promos = n_promos; local_n_moves = msp - first_move;
 
-#ifndef NO_BULK_COUNTS
+#ifdef NO_BULK_COUNTS
     if(depth == 1) {
-        count += local_n_moves + 3*local_n_promos;
+        count += local_n_moves;
+
         msp = first_move; /* throw away moves */
         return;
     }
@@ -971,15 +979,29 @@ path[d] = stack[i];
                    ((board[to+LT]^piece) & (COLOR|PAWNS_INDEX)) == COLOR)
                     Index = mode * 76265;
             } else if(mode == EP_MODE) {
-                capt ^= 0x10;
-            } else if(mode == PROMO_MODE) {   /* Promotion. Shuffle piece list :( */
-                oldpiece = piece; index_to_pos[piece-WHITE]=0;
-                /* set up for new Queen first */
-                piece = --color_to_first_slider_index[color]+WHITE;
-                index_to_kind[piece-WHITE] = QUEEN_KIND;
-                index_to_capt_code[piece-WHITE] = C_QUEEN;
-                Zob[piece-WHITE]  = Keys + 128*QUEEN_KIND + (color&BLACK)/8 - 0x22;
+                capt ^= 0x10; // trick to go backwards one square
+            } else if(mode <= PROMO_MODE_Q) {
+                // Promotion
+                oldpiece = piece; index_to_pos[piece-WHITE] = 0;
+                const int promo_kind = mode - PROMO_MODE;
+                if(promo_kind == KNIGHT_KIND) {
+                    // Knight into knight list
+                    piece = ++color_to_last_knight_index[color]+WHITE;
+                    index_to_pos[piece-WHITE]  = from;
+                    index_to_kind[piece-WHITE] = KNIGHT_KIND;
+                    Zob[piece-WHITE]  = Keys + 128*KNIGHT_KIND + (color&BLACK)/8 - 0x22;
+                } else {
+                    // Sliders into sliders list
+                    piece = --color_to_first_slider_index[color]+WHITE;
+                    index_to_kind[piece-WHITE] = QUEEN_KIND;
+                    index_to_capt_code[piece-WHITE] = C_QUEEN;
+                    Zob[piece-WHITE]  = Keys + 128*QUEEN_KIND + (color&BLACK)/8 - 0x22;
+                    index_to_pos[piece-WHITE]  = from;
+                }
                 index_to_pos[piece-WHITE]  = from;
+                index_to_kind[piece-WHITE] = promo_kind;
+                index_to_capt_code[piece-WHITE] = KIND_TO_CAPT_CODE[promo_kind];
+                Zob[piece-WHITE]  = Keys + 128*promo_kind + (color&BLACK)/8 - 0x22;
                 HashKey ^= Zobrist(piece, from) ^ Zobrist(oldpiece, from);
                 HighKey ^= Zobrist(piece, from+8) ^ Zobrist(oldpiece, from+8);
                 Index += 14457159; /* prevent hits by non-promotion moves */
@@ -1057,6 +1079,8 @@ minor:
 
         local_count++;
 
+        //pboard(board, 12, 0);
+        
         /* recursion or count end leaf */
         if(depth == 1) {
             nodecount++;
@@ -1087,41 +1111,20 @@ minor:
         board[from] = piece;
 
 quick:
-        if((unsigned int) stack[i]>=PROMO_SHIFTED)   /* was castling or prom */
-        {   if(mode==PROMO_MODE)
-            {
-                if(noUnder) {
+        if(EP_MODE < mode) {           // Castling or promo
+            if(mode <= PROMO_MODE_Q) { // Promo
+                // Demote to Pawn again.
+                if(index_to_kind[piece-WHITE] == KNIGHT_KIND) {
+                    color_to_last_knight_index[color]--;
+                } else {
                     color_to_first_slider_index[color]++;
-                    piece =oldpiece;
-                    index_to_pos[piece-WHITE] = from;
-                    board[from] = piece;
-                } else
-                if(--index_to_kind[piece-WHITE] >= KNIGHT_KIND)
-                {
-                    HashKey ^= Zobrist(piece, to);
-                    HighKey ^= Zobrist(piece, to+8);
-                    if(index_to_kind[piece-WHITE] == KNIGHT_KIND)
-                    {   /* Knight must be put in Knight list */
-                        color_to_first_slider_index[color]++;
-                        piece = ++color_to_last_knight_index[color]+WHITE;
-                        index_to_pos[piece-WHITE]  = from;
-                        index_to_kind[piece-WHITE] = KNIGHT_KIND;
-                        Zob[piece-WHITE]  = Keys + 128*KNIGHT_KIND
-                                                 + (color&BLACK)/8 - 0x22;
-                    } else Zob[piece-WHITE] -= 128;
-                    index_to_capt_code[piece-WHITE] = KIND_TO_CAPT_CODE[index_to_kind[piece-WHITE]];
-                    HashKey ^= Zobrist(piece, to);
-                    HighKey ^= Zobrist(piece, to+8);
-                    goto minor; /* try minor promotion */
-                } else
-                {   /* All promotions tried, demote to Pawn again */
-                    index_to_kind[piece-WHITE] = QUEEN_KIND; /* put Q back for hash store */
-                    piece = oldpiece; color_to_last_knight_index[color]--;
-                    index_to_pos[piece-WHITE] = from;
-                    board[from] = piece;
                 }
-            } else
-            {   /* undo Rook move */
+                index_to_kind[piece-WHITE] = QUEEN_KIND; // put Q back for hash store ???
+                piece = oldpiece;
+                index_to_pos[piece-WHITE] = from;
+                board[from] = piece;
+            } else {                   // Castling
+                /* undo Rook move */
                 board[j] = board[h];
                 board[h] = DUMMY;
                 index_to_pos[board[j]-WHITE] = j;
