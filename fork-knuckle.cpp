@@ -61,7 +61,7 @@ char *Zob[2*NPCE];
     // Various maps from piece (in pieces list) to various piece data
     unsigned char *const piece_to_kind = (pc+1-WHITE);
     unsigned char *const cstl = (pc+1+NPCE);
-    unsigned char *const index_to_pos = (pc+1+NPCE*2);
+    unsigned char *const piece_to_cstl = (pc+1+NPCE-WHITE);
     unsigned char *const piece_to_pos = (pc+1+NPCE*2-WHITE);
     unsigned char *const piece_to_capt_code = (pc+1+NPCE*3-WHITE);
 
@@ -185,10 +185,6 @@ char Keys[1040];
             piece_to_kind[file+PAWNS_INDEX+WHITE]       = B_PAWN_KIND; // ??? wrong way round?
             piece_to_kind[file+PAWNS_INDEX+BLACK]       = W_PAWN_KIND;
 
-            // index_to_pos[BACK_ROW_INDEXES[file]]        = file+0x22;
-            // index_to_pos[BACK_ROW_INDEXES[file]+WHITE]  = file+0x92;
-            // index_to_pos[file+PAWNS_INDEX]              = file+0x32;
-            // index_to_pos[file+PAWNS_INDEX+WHITE]        = file+0x82;
             piece_to_pos[BACK_ROW_INDEXES[file]+WHITE]  = file+0x22;
             piece_to_pos[BACK_ROW_INDEXES[file]+BLACK]  = file+0x92;
             piece_to_pos[file+PAWNS_INDEX+WHITE]        = file+0x32;
@@ -226,8 +222,6 @@ char Keys[1040];
      */
     void setup(void) {
         for(int i=0; i<WHITE-8; i++) {
-            // if(index_to_pos[i]      ) board[index_to_pos[i]]       = WHITE + i;
-            // if(index_to_pos[i+WHITE]) board[index_to_pos[i+WHITE]] = BLACK + i;
             if(piece_to_pos[WHITE+i]) board[piece_to_pos[WHITE+i]] = WHITE + i;
             if(piece_to_pos[BLACK+i]) board[piece_to_pos[BLACK+i]] = BLACK + i;
         }
@@ -254,7 +248,6 @@ char Keys[1040];
         int color;
         
         /* remove all pieces */
-        //for(int i=0; i<NPCE; i++) index_to_pos[i] = cstl[i] = 0;
         for(int i=0; i<NPCE; i++) piece_to_pos[WHITE+i] = cstl[i] = 0;
         color_to_first_slider_index[WHITE] = 0x10;
         color_to_first_slider_index[BLACK] = 0x30;
@@ -280,7 +273,6 @@ char Keys[1040];
                     int piece_kind = BISHOP_KIND, cc = 0, nr;
                     switch(c) {
                     case 'K':
-                        //if(index_to_pos[color-WHITE] > 0) return -1;   /* two kings illegal */
                         if(piece_to_pos[color] > 0) return -1;   // two kings illegal
                         piece_kind = KING_KIND;
                         nr = color-WHITE;
@@ -311,7 +303,6 @@ char Keys[1040];
                     default:
                         return -15;
                     }
-                    //index_to_pos[nr] = ((file +  16*row) & 0x77) + 0x22;
                     piece_to_pos[nr+WHITE] = ((file +  16*row) & 0x77) + 0x22;
                     piece_to_kind[nr+WHITE] = piece_kind;
                     piece_to_capt_code[nr+WHITE] = KIND_TO_CAPT_CODE[piece_kind];
@@ -328,9 +319,7 @@ char Keys[1040];
                 if(row==0  && c != ' ') return -11;
             }
         }
-        if(piece_to_pos[king_piece(WHITE)] == 0 || index_to_pos[king_piece(BLACK)] == 0) return -5; /* missing king */
-        //if(index_to_pos[0] == 0 || index_to_pos[WHITE] == 0) return -5; /* missing king */
-
+        if(piece_to_pos[king_piece(WHITE)] == 0 || piece_to_pos[king_piece(BLACK)] == 0) return -5; /* missing king */
         /* now do castle rights and side to move */
         cstl[DUMMY-WHITE]=0;
         int cc = 0;
@@ -455,7 +444,7 @@ char Keys[1040];
 #   define FOREACH_PIECE(first_piece_index, last_piece_index, block) do { \
         const int first_piece_index__ = (first_piece_index), last_piece_index__ = (last_piece_index); \
         for(int piece_index__ = first_piece_index__; piece_index__ <= last_piece_index__; piece_index__++) { \
-            const int piece_pos__ = index_to_pos[piece_index__]; if(piece_pos__ == 0) continue; \
+            const int piece_pos__ = piece_to_pos[piece_index__+WHITE]; if(piece_pos__ == 0) continue; \
             do block while(false); \
         } \
     } while(false)
@@ -493,7 +482,6 @@ char Keys[1040];
     } while(false)  
     
     // @return Position of the King.
-    //int king_pos(const int color) const { return index_to_pos[king_index(color)]; }
     int king_pos(const int color) const { return piece_to_pos[king_piece(color)]; }
 
     // @return true iff the given square is occupied by a piece of either color - guards are considered occupied
@@ -605,9 +593,7 @@ char Keys[1040];
 
                             // Remove from piece list and put on pin stack.
                             const int pinned_piece_index = piece_to_index(pinned_piece);
-                            //ppos[psp] = index_to_pos[pinned_piece_index];
                             ppos[psp] = piece_to_pos[pinned_piece];
-                            //index_to_pos[pinned_piece_index] = 0;
                             piece_to_pos[pinned_piece] = 0;
                             //pstack[psp++] = pinned_piece_index;
                             pstack[psp++] = pinned_piece;
@@ -740,7 +726,6 @@ char Keys[1040];
     static bool is_ep_rank(const int color, const int pos) { return is_same_rank(ep_rank(color), pos); }
 
     // @return true iff the given piece has been removed from the pieces list because it is pinned.
-    //bool is_pinned(int piece_pos) { return !index_to_pos[board[piece_pos]-WHITE]; }
     bool is_pinned(int piece_pos) { return !piece_to_pos[board[piece_pos]]; }
     
     // On contact check only King retreat or capture helps.
@@ -1054,7 +1039,6 @@ char Keys[1040];
                 // Promotion - replace pawn with promo piece kind
                 const int orig_piece = piece;
                 int piece_index = piece_to_index(piece);
-                //index_to_pos[piece_index] = 0;
                 piece_to_pos[piece] = 0;
                 const int promo_kind = mode - PROMO_MODE;
                 if(promo_kind == KNIGHT_KIND) {
@@ -1065,7 +1049,6 @@ char Keys[1040];
                     piece = --color_to_first_slider_index[color]+WHITE;
                 }
                 piece_index = piece_to_index(piece);
-                //index_to_pos[piece_index]  = from;
                 piece_to_pos[piece]  = from;
                 piece_to_kind[piece] = promo_kind;
                 piece_to_capt_code[piece] = KIND_TO_CAPT_CODE[promo_kind];
@@ -1079,7 +1062,6 @@ char Keys[1040];
                 // Move Rook.
                 board[rook_to] = board[rook_from];
                 board[rook_from] = DUMMY;
-                //index_to_pos[board[rook_to]-WHITE] = rook_to;
                 piece_to_pos[board[rook_to]] = rook_to;
                 update_hash_key_for_move(board[rook_to], rook_from, rook_to);
             }
@@ -1097,7 +1079,6 @@ char Keys[1040];
                 } else {
                     color_to_first_slider_index[color]++;
                 }
-                //index_to_pos[piece_to_index(orig_piece)] = from;
                 piece_to_pos[orig_piece] = from;
                 board[from] = orig_piece;
             } else {                   // Castling
@@ -1106,7 +1087,6 @@ char Keys[1040];
                 /* undo Rook move */
                 board[rook_from] = board[rook_to];
                 board[rook_to] = DUMMY;
-                //index_to_pos[board[rook_from]-WHITE] = rook_from;
                 piece_to_pos[board[rook_from]] = rook_from;
             }
         }
@@ -1117,16 +1097,12 @@ char Keys[1040];
         board[capt_pos] = board[from] = DUMMY;
         board[to] = piece;
         
-        // index_to_pos[piece_to_index(piece)] = to;
-        // index_to_pos[piece_to_index(capt_piece)] = 0;
         piece_to_pos[piece] = to;
         piece_to_pos[capt_piece] = 0;
     }
     
     // Revert board and pieces list.
     void unmake_move(const int piece, const int from, const int to, const int capt_piece, const int capt_pos) {
-        // index_to_pos[piece_to_index(piece)] = from;
-        // index_to_pos[piece_to_index(capt_piece)] = capt_pos;
         piece_to_pos[piece] = from;
         piece_to_pos[capt_piece] = capt_pos;
 
@@ -1213,14 +1189,12 @@ char Keys[1040];
     int checker_pos(const int color) {
         for(int i=0; i<8; i++) {
             int v = KING_DIRS[i];
-            //int x = index_to_pos[king_index(color)] + v;
             int x = piece_to_pos[king_piece(color)] + v;
             int piece = board[x];
             if((piece & COLOR) == other_color(color)) {
                 if(piece_to_capt_code[piece] & DIR_TO_CAPT_CODE[-v]) return x;
             }
             v = KNIGHT_DIRS[i];
-            //x = index_to_pos[king_index(color)] + v;
             x = piece_to_pos[king_piece(color)] + v;
             piece = board[x];
             if((piece & COLOR) == other_color(color)) {
