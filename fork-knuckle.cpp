@@ -420,7 +420,7 @@ char Keys[1040];
     static int king_piece(const int color) { return color + KING_INDEX; }
 
     // @return Piece index of the first pawn.
-    int first_pawn_piece(const int color) { return color_to_first_pawn_piece[color]; }
+    //int first_pawn_piece(const int color) { return color_to_first_pawn_piece[color]; }
 
     // @return Piece index of the first pawn.
     static int last_pawn_index(const int color) { return color-WHITE+PAWNS_INDEX+8 - 1; }
@@ -448,6 +448,14 @@ char Keys[1040];
         } \
     } while(false)
 
+#   define FOREACH_PIECE2(first_piece, last_piece, block) do { \
+        const int first_piece__ = (first_piece), last_piece__ = (last_piece); \
+        for(int piece__ = first_piece__; piece__ <= last_piece__; piece__++) { \
+            const int piece_pos__ = piece_to_pos[piece_index__]; if(piece_pos__ == 0) continue; \
+            do block while(false); \
+        } \
+    } while(false)
+
 #   define FOREACH_KNIGHT(color, block) do {                            \
         const int color__ = (color);                                    \
         FOREACH_PIECE(first_knight_index(color__), last_knight_index(color__), { \
@@ -458,7 +466,7 @@ char Keys[1040];
     
 #   define FOREACH_PAWN(color, block) do {                            \
         const int color__ = (color);                                    \
-        FOREACH_PIECE(first_pawn_piece(color__)-WHITE, last_pawn_index(color__), { \
+        FOREACH_PIECE(color_to_first_pawn_piece[color__]-WHITE, last_pawn_index(color__), { \
                 const int pawn_index = piece_index__; const int pawn_pos = piece_pos__; \
                 do block while(false);                                  \
             });                                                         \
@@ -476,6 +484,14 @@ char Keys[1040];
         const int color__ = (color);                                    \
         FOREACH_PIECE(first_slider_index(color__), last_slider_index(color__), { \
                 const int slider_index = piece_index__; const int slider_pos = piece_pos__; \
+                do block while(false);                                  \
+            });                                                         \
+    } while(false)  
+    
+#   define FOREACH_SLIDER2(color, block) do {                            \
+        const int color__ = (color);                                    \
+        FOREACH_PIECE(first_slider_index(color__), last_slider_index(color__), { \
+                const int slider = piece_index__+WHITE; const int slider_pos = piece_pos__; \
                 do block while(false);                                  \
             });                                                         \
     } while(false)  
@@ -511,6 +527,16 @@ char Keys[1040];
         return is_common_capt_code(piece_capt_code, dir_capt_code);
     }
 
+    // For sliders this is not a strong enough check to ensure the piece can get through to
+    //   the target position - we still have to check that no other pieces are sitting in-between.
+    // @return true iff the given piece is attacking/defending the target position,
+    //                including slider pieces with another piece in between.
+    bool is_attacking_weak2(const int piece, const int piece_pos, const int target_pos) const {
+        int piece_capt_code = piece_to_capt_code[piece];
+        int dir_capt_code = DIR_TO_CAPT_CODE[piece_pos - target_pos];
+        return is_common_capt_code(piece_capt_code, dir_capt_code);
+    }
+
     // @return true iff the given non-slider piece is attacking (or defending) the target position.
     bool is_attacking_non_slider(const int piece_index, const int piece_pos, const int target_pos) const {
         return is_attacking_weak(piece_index, piece_pos, target_pos);
@@ -519,6 +545,18 @@ char Keys[1040];
     // @return true iff the given slider piece is attacking (or defending) the target position.
     bool is_attacking_slider(const int slider_index, const int slider_pos, const int target_pos) const {
         if(is_attacking_weak(slider_index, slider_pos, target_pos)) {
+            int dir = delta_vec[slider_pos - target_pos]; // Single square move.
+            // Baby steps from target piece back towards slider.
+            int between_pos; for(between_pos = target_pos + dir; is_empty(between_pos); between_pos += dir) { /*nada*/ }
+            // Check that first piece we hit was the slider - i.e. no other pieces in between.
+            if(slider_pos == between_pos) { return true; }
+        }
+        return false;
+    }
+    
+    // @return true iff the given slider piece is attacking (or defending) the target position.
+    bool is_attacking_slider2(const int slider, const int slider_pos, const int target_pos) const {
+        if(is_attacking_weak2(slider, slider_pos, target_pos)) {
             int dir = delta_vec[slider_pos - target_pos]; // Single square move.
             // Baby steps from target piece back towards slider.
             int between_pos; for(between_pos = target_pos + dir; is_empty(between_pos); between_pos += dir) { /*nada*/ }
@@ -744,8 +782,8 @@ char Keys[1040];
             });
 
         // Sliders
-        FOREACH_SLIDER(color, {
-                if(is_attacking_slider(slider_index, slider_pos, checker_pos)) {
+        FOREACH_SLIDER2(color, {
+                if(is_attacking_slider2(slider, slider_pos, checker_pos)) {
                     push_move(slider_pos, checker_pos);
                 }
             });
