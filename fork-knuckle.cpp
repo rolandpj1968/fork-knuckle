@@ -77,11 +77,28 @@ char          *const delta_vec  = ((char *) brd+1+0xBC+0xEF+0x77); /* step to br
 
 char Keys[1040];
 int path[100];
-    uint32_t stack[1024];
-    int msp = 0, Split, epSqr, HashSize, HashSection;
-uint64_t HashKey=8729767686LL, HighKey=1234567890LL, count, epcnt, xcnt, ckcnt, cascnt, promcnt, nodecount;
-FILE *f;
-clock_t ttt[30];
+
+    struct MoveStack {
+        uint32_t stack[1024];
+        int msp = 0;
+
+        void push(const uint32_t move) { stack[msp++] = move; }
+
+        uint32_t at(const int i) const { return stack[i]; }
+
+        void swap_pop(const int i) { stack[i] = stack[--msp]; }
+
+        int pop_to(const int i) {
+            int n_popped = msp - i;
+            msp = i;
+            return n_popped;
+        }
+    } move_stack;
+
+    int epSqr, HashSize, HashSection;
+    uint64_t HashKey=8729767686LL, HighKey=1234567890LL, count, epcnt, xcnt, ckcnt, cascnt, promcnt, nodecount;
+    //FILE *f;
+    clock_t ttt[30];
 
     /**
      * Make an empty board surrounded by guard band of uncapturable pieces.
@@ -358,10 +375,10 @@ clock_t ttt[30];
     static int mk_move(const int from_pos, const int to_pos, const int mode) { return (mode << MODE_SHIFT) | mk_move(from_pos, to_pos); }
 
     // Push a normal move.
-    void push_move(const int from_pos, const int to_pos) { stack[msp++] = mk_move(from_pos, to_pos); }
+    void push_move(const int from_pos, const int to_pos) { move_stack.push(mk_move(from_pos, to_pos)); }
 
     // Push a special-mode move.
-    void push_move(const int from_pos, const int to_pos, const int mode) { stack[msp++] = mk_move(from_pos, to_pos, mode); }
+    void push_move(const int from_pos, const int to_pos, const int mode) { move_stack.push(mk_move(from_pos, to_pos, mode)); }
 
     // Push a pawn move to the move stack - and add promo flag where required.
     void push_pawn_move(const int color, const int from, const int to) {
@@ -533,14 +550,10 @@ clock_t ttt[30];
         return DIR_TO_CAPT_CODE[slider_pos-piece_pos] & index_to_capt_code[slider_index] & C_DISTANT;
     }
 
-    long n_pincheck_calls = 0;
-    long n_pincheck_sliders = 0;
-    long n_pincheck_checks = 0;
-    
     // All pinned pieces are removed from lists.
     // All their remaining legal moves are generated.
     // All distant checks are detected.
-    void gen_pincheck_moves(const int color, CheckData& check_data, int pstack[], int ppos[], int& psp) { n_pincheck_calls++;
+    void gen_pincheck_moves(const int color, CheckData& check_data, int pstack[], int ppos[], int& psp) {
         int king_pos = this->king_pos(color);
         int fw = forward_dir(color);
 
@@ -548,8 +561,8 @@ clock_t ttt[30];
         // If aiming at King & 1 piece of us in between, park this piece
         //   on pin stack for rest of move generation, after generating its
         //   moves along the pin line.
-        FOREACH_SLIDER(other_color(color), { n_pincheck_sliders++;
-                if(is_on_slider_ray(king_pos, slider_pos, slider_index)) { n_pincheck_checks++;
+        FOREACH_SLIDER(other_color(color), {
+                if(is_on_slider_ray(king_pos, slider_pos, slider_index)) {
                     // Slider aimed at our king.
                     const int check_dir = delta_vec[slider_pos - king_pos];
                     const int pinned_pos = next_nonempty(king_pos, check_dir);
@@ -777,24 +790,24 @@ clock_t ttt[30];
     }
 
     // Remove moves that don't solve distant check by capturing checker or interposing on check ray.
-    void remove_illegal_moves(const int color, int first_move, CheckData& check_data) {
+    void remove_illegal_moves(const int color, const int first_move, const CheckData& check_data) {
         if(check_data.in_check) {
             int king_pos = this->king_pos(color);    // King position.
-            for(int i = first_move; i < msp; i++) {  // Go through all moves.
-                int to = move_to(stack[i]);              // To position.
-                int mode = move_mode(stack[i]);
+            for(int i = first_move; i < move_stack.msp; i++) {  // Go through all moves.
+                int to = move_to(move_stack.at(i));              // To position.
+                int mode = move_mode(move_stack.at(i));
                 
                 if(delta_vec[to-king_pos] != check_data.check_dir) {
-                    stack[i--] = stack[--msp]; // Note, re-orders list. - we could compact in order instead.
+                    move_stack.swap_pop(i--); // Note, re-orders list. - we could compact in order instead.
                 } else {
                     // On check ray, could block or capture checker.
-                    int x = king_pos;
+                    int ray_pos = king_pos;
                     do{
-                        x += check_data.check_dir;
-                        if(x==to) break;
-                    } while(x != check_data.checker_pos);
-                    if(x!=to) {
-                        stack[i--] = stack[--msp];
+                        ray_pos += check_data.check_dir;
+                        if(ray_pos == to) break;
+                    } while(ray_pos != check_data.checker_pos);
+                    if(ray_pos != to) {
+                        move_stack.swap_pop(i--);
                     }
                 }
             }
@@ -855,7 +868,7 @@ clock_t ttt[30];
     // Legal move generator.
     // Only wrinkle is with promo's - only the queen promo move is generated, and the caller has to generate under-promo's manually.
     void gen_moves2(const int color, int last_move, int d, CheckData& check_data) {
-        int pstack[12], ppos[12], psp=0, first_move=msp;
+        int pstack[12], ppos[12], psp=0, first_move = move_stack.msp;
         int ep_pos = move_mode(last_move);
 
         // Pinned-piece moves and non-contact check detection.
@@ -865,7 +878,7 @@ clock_t ttt[30];
         get_contact_check(color, last_move, check_data);
 
         // Remove moves with pinned pieces if in check.
-        if(check_data.in_check) { msp = first_move; }
+        if(check_data.in_check) { move_stack.pop_to(first_move); }
         
         // If we're not in double check, then generate moves for all pieces, otherwise only king moves are allowed
         if(!check_data.in_double_check()) {
@@ -930,31 +943,27 @@ void perft(const int color, int last_move, int depth, int d)
     int SavRights = CasRights, Index;
     uint64_t ocnt=count, OldKey = HashKey, OldHKey = HighKey, SavCnt;
     union _bucket *Bucket;
-    int local_count = 0, local_n_moves = 0;
 
     TIME(17)
-    const int first_move = msp; /* new area on move stack */
+    const int first_move = move_stack.msp; /* new area on move stack */
     CheckData check_data;
     gen_moves(color, last_move, d, check_data); /* generate moves */
     nodecount++;
-    local_n_moves = msp - first_move;
 
 #ifndef NO_BULK_COUNTS
     if(depth == 1) {
-        count += local_n_moves;
-
-        msp = first_move; /* throw away moves */
+        count += move_stack.pop_to(first_move);
         return;
     }
 #endif //def NO_BULK_COUNTS
     
-    for(i = first_move; i<msp; i++)  /* go through all moves */
+    for(i = first_move; i < move_stack.msp; i++)  /* go through all moves */
     {
       /* fetch move from move stack */
-        from = move_from(stack[i]);
-        to = capt = move_to(stack[i]);
-        mode = move_mode(stack[i]);
-path[d] = stack[i];
+        from = move_from(move_stack.at(i));
+        to = capt = move_to(move_stack.at(i));
+        mode = move_mode(move_stack.at(i));
+        path[d] = move_stack.at(i);
         piece  = board[from];
 
         Index = 0;
@@ -1018,7 +1027,7 @@ path[d] = stack[i];
                      ^ Zobrist(victim,capt+8);
             Index += (CasRights << 4) +color*919581;
             if(depth>2) {
-              path[d] = stack[i];
+                path[d] = move_stack.at(i); // ???
               if(true/*change to || for large entries only ->*/ && depth > 7) { // the count will not fit in 32 bits
                  if(depth > 9) {
                    int i = HashSection, j = depth-9;
@@ -1064,16 +1073,12 @@ minor:
         /* remove captured piece from piece list  */
         index_to_pos[victim-WHITE] = 0;
 
-        local_count++;
-
-        //pboard(board, 12, 0);
-        
         /* recursion or count end leaf */
         if(depth == 1) {
             nodecount++;
             count++;
         } else {
-            perft(other_color(color), stack[i], depth-1, d+1);
+            perft(other_color(color), move_stack.at(i), depth-1, d+1);
             if(HashFlag) {
                 if(true/*change to || for large entries only ->*/ && depth > 7) { //large entry
                     Bucket->l.Signature1 = HighKey;
@@ -1124,36 +1129,11 @@ quick:
 
     }
 
-    msp = first_move; /* throw away moves */
-
-    /* For split perft uncomment the following line */
-    if(d <= Split && d > 1)
-    {
-        int i; clock_t t = clock();
-        printf("%d. ", d);
-        fprintf(f, "%d. ", d);
-        for(i=1; i<d; i++) {
-                   printf("%c%c%c%c ",
-                   'a'+((path[i]-0x2222)>> 8&7),
-                   '1'+((path[i]-0x2222)>>12&7),
-                   'a'+((path[i]-0x2222)    &7),
-                   '1'+((path[i]-0x2222)>> 4&7) );
-                   fprintf(f, "%c%c%c%c ",
-                   'a'+((path[i]-0x2222)>> 8&7),
-                   '1'+((path[i]-0x2222)>>12&7),
-                   'a'+((path[i]-0x2222)    &7),
-                   '1'+((path[i]-0x2222)>> 4&7) );
-        }
-        printf("moves = %10lld (%6.3f sec)\n", count-ocnt, (t - ttt[d])*(1./CLOCKS_PER_SEC));
-        fprintf(f, "moves = %10lld (%6.3f sec)\n", count-ocnt, (t - ttt[d])*(1./CLOCKS_PER_SEC)); fflush(f);
-        ttt[d] = t;
-    }
+    move_stack.pop_to(first_move); /* throw away moves */
 }
 
-void doit(int Dep, int color, int split) {
+void doit(int Dep, int color) {
 
-    Split = split;
-    
     printf("Quick Perft by H.G. Muller\n");
     printf("Perft mode: ");
     if(HashFlag) printf("Hash-table size = %d%cB",
@@ -1161,8 +1141,6 @@ void doit(int Dep, int color, int split) {
                  HashSize<64*1024 ? 'k' : 'M' );
     else         printf("No hashing");
     printf("\n\n");
-    f = fopen("log.txt", "a");
-    fprintf(f, "perft %d -%d\n", Dep, Split);
 
     for(int i=1; i<=Dep; i++)
     {
@@ -1172,16 +1150,9 @@ void doit(int Dep, int color, int split) {
         for(int j=0; j<10; j++) accept[j] = reject[j] = 0, ttt[j] = t;
         perft(color, last_move, i, 1);
         t = clock()-t;
-        //printf("perft(%2d)= %12lld (%6.3f sec)\n", i, count, t*(1./CLOCKS_PER_SEC));
-        printf("perft(%2d)= %12lld (%6.3f sec)         npinch %ld, npinchs %ld, npinchc %ld\n", i, count, t*(1./CLOCKS_PER_SEC), n_pincheck_calls, n_pincheck_sliders, n_pincheck_checks);
-        if(HashFlag) {
-            for(int j=0; j<10; j++) {
-                //printf("    depth %2d: accept %12ld reject %12ld (%6.4lf)\n", j, accept[j], reject[j], (double)accept[j]/reject[j]);
-            }
-        }
+        printf("perft(%2d)= %12lld (%6.3f sec)\n", i, count, t*(1./CLOCKS_PER_SEC));
         fflush(stdout);
     }
-    fclose(f);
 }
 
 void setup_hash(int size) {
@@ -1244,11 +1215,6 @@ int main(int argc, char **argv)
         argc--; argv++;
     }
 
-    int split = 0;
-    if(argc > 1 && argv[1][0] == '-' && sscanf(argv[1]+1, "%d", &split) == 1) {
-        argc--; argv++;
-    }
-
     if(argc > 1) FEN = argv[1];
 
     class P p;
@@ -1262,6 +1228,6 @@ int main(int argc, char **argv)
         exit(0);
     }
 
-    p.doit(depth, color, split);
+    p.doit(depth, color);
 }
 
