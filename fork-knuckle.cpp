@@ -1002,12 +1002,93 @@ char Keys[1040];
         cache_hit = false; return Bucket;
     }
 
-    void handle_special_moves() {
+    void hash_update(const int depth, union _bucket *const Bucket, const int store, const uint64_t count) {
+        if(HashFlag) {
+            if(true/*change to || for large entries only ->*/ && depth > 7) { //large entry
+                Bucket->l.Signature1 = HighKey;
+                Bucket->l.Signature2 = HashKey;
+                Bucket->l.longCount  = count;
+            } else { // packed entry
+                Bucket->s.Signature[store] = HighKey;
+                Bucket->s.Extension[store] = (HashKey>>32) & ~1; // erase low bit
+                Bucket->s.Count[store]     = count;
+            }
+        }
     }
     
+    void prepare_special_moves(const int color, const Move move, int& piece, int& capt_pos, int& Index) {
+        const int from = move.from(), to = move.to(), mode = move.mode();
+
+        // Check for special moves.
+        if(move.mode()) {
+            if(mode < EP_MODE) {
+                // 2-square pawn move - change the hash if en-passant is possible.
+                if(((board[to+RT]^piece) & (COLOR|PAWNS_INDEX)) == COLOR ||
+                   ((board[to+LT]^piece) & (COLOR|PAWNS_INDEX)) == COLOR)
+                    Index = mode * 76265;
+            } else if(mode == EP_MODE) {
+                // En-passant capture - capture square is not the same as the to square.
+                capt_pos ^= 0x10;
+            } else if(mode <= PROMO_MODE_Q) {
+                // Promotion - replace pawn with promo piece kind
+                const int orig_piece = piece;
+                int piece_index = piece_to_index(piece);
+                index_to_pos[piece_index] = 0;
+                const int promo_kind = mode - PROMO_MODE;
+                if(promo_kind == KNIGHT_KIND) {
+                    // Knight into knight list
+                    piece = ++color_to_last_knight_index[color]+WHITE;
+                } else {
+                    // Sliders into sliders list
+                    piece = --color_to_first_slider_index[color]+WHITE;
+                }
+                piece_index = piece_to_index(piece);
+                index_to_pos[piece_index]  = from;
+                index_to_kind[piece_index] = promo_kind;
+                index_to_capt_code[piece_index] = KIND_TO_CAPT_CODE[promo_kind];
+                Zob[piece_index]  = Keys + 128*promo_kind + (color&BLACK)/8 - 0x22;
+                update_hash_key_for_promo(orig_piece, piece, from);
+                Index += 14457159; // Prevent clash with non-promotion moves.
+            } else {
+                // Castling - determine Rook move.
+                const int rook_from = mode - CAS_MODE + from;
+                const int rook_to = (from+to) >> 1;
+                // Move Rook.
+                board[rook_to] = board[rook_from];
+                board[rook_from] = DUMMY;
+                index_to_pos[board[rook_to]-WHITE] = rook_to;
+                update_hash_key_for_move(board[rook_to], rook_from, rook_to);
+            }
+        }
+    }
+    
+    void undo_special_moves(const int color, const Move move, const int piece_index, const int orig_piece) {
+        const int from = move.from(), to = move.to(), mode = move.mode();
+
+        if(EP_MODE < mode) {           // Castling or promo
+            if(mode <= PROMO_MODE_Q) { // Promo
+                // Demote to Pawn again.
+                if(index_to_kind[piece_index] == KNIGHT_KIND) {
+                    color_to_last_knight_index[color]--;
+                } else {
+                    color_to_first_slider_index[color]++;
+                }
+                index_to_pos[piece_to_index(orig_piece)] = from;
+                board[from] = orig_piece;
+            } else {                   // Castling
+                const int rook_from = mode - CAS_MODE + from;
+                const int rook_to = (from+to) >> 1;
+                /* undo Rook move */
+                board[rook_from] = board[rook_to];
+                board[rook_to] = DUMMY;
+                index_to_pos[board[rook_from]-WHITE] = rook_from;
+            }
+        }
+    }
+
+    // Count leaf nodes at given depth.
     void perft(const int color, Move last_move, int depth, int d) {
-        /* recursive perft, with in-lined make/unmake */
-        int oldpiece, store;
+        int store;
         int SavRights = CasRights;
         uint64_t OldKey = HashKey, OldHKey = HighKey;
 
@@ -1029,65 +1110,25 @@ char Keys[1040];
     
         for(int i = first_move; i < move_stack.msp; i++) {
             const uint64_t SavCnt = count;
-            const int from = move_stack.at(i).from();
-            const int to = move_stack.at(i).to();
+            const Move move = move_stack.at(i);
+            const int from = move.from(), to = move.to(), mode = move.mode();
+
+            int piece = board[from]; int orig_piece = piece;
             int capt_pos = to;
-            const int mode = move_stack.at(i).mode();
-            int piece = board[from];
-            int piece_index = piece_to_index(piece);
 
             path[d] = move_stack.at(i);
 
             int Index = 0;
 
-            int rook_from, rook_to; // For castling
+            // Special handling for castling, en-passant and promotion.
+            prepare_special_moves(color, move, piece, capt_pos, Index);
 
-            // Check for special moves.
-            if(mode) {
-                if(mode < EP_MODE) {
-                    // 2-square pawn move - change the hash if en-passant is possible.
-                    if(((board[to+RT]^piece) & (COLOR|PAWNS_INDEX)) == COLOR ||
-                       ((board[to+LT]^piece) & (COLOR|PAWNS_INDEX)) == COLOR)
-                        Index = mode * 76265;
-                } else if(mode == EP_MODE) {
-                    // En-passant capture - capture square is not the same as the to square.
-                    capt_pos ^= 0x10;
-                } else if(mode <= PROMO_MODE_Q) {
-                    // Promotion - replace pawn with promo piece kind
-                    oldpiece = piece;
-                    index_to_pos[piece_index] = 0;
-                    const int promo_kind = mode - PROMO_MODE;
-                    if(promo_kind == KNIGHT_KIND) {
-                        // Knight into knight list
-                        piece = ++color_to_last_knight_index[color]+WHITE;
-                    } else {
-                        // Sliders into sliders list
-                        piece = --color_to_first_slider_index[color]+WHITE;
-                    }
-                    piece_index = piece_to_index(piece);
-                    index_to_pos[piece_index]  = from;
-                    index_to_kind[piece_index] = promo_kind;
-                    index_to_capt_code[piece_index] = KIND_TO_CAPT_CODE[promo_kind];
-                    Zob[piece_index]  = Keys + 128*promo_kind + (color&BLACK)/8 - 0x22;
-                    update_hash_key_for_promo(oldpiece, piece, from);
-                    Index += 14457159; // Prevent clash with non-promotion moves.
-                } else {
-                    // Castling - determine Rook move.
-                    rook_from = mode - CAS_MODE + from;
-                    rook_to = (from+to) >> 1;
-                    // Move Rook.
-                    board[rook_to] = board[rook_from];
-                    board[rook_from] = DUMMY;
-                    index_to_pos[board[rook_to]-WHITE] = rook_to;
-                    update_hash_key_for_move(board[rook_to], rook_from, rook_to);
-                }
-            }
-
-            const int capt_piece = board[capt_pos];
+            const int piece_index = piece_to_index(piece), capt_piece = board[capt_pos];
             CasRights |= cstl[piece_index] | cstl[piece_to_index(capt_piece)];
 
             bool cache_hit = false;
 
+            // This updates the count as a side-effect.
             union _bucket *Bucket = hash_lookup(color, depth, piece, from, to, capt_piece, capt_pos, Index, cache_hit, store);
 
             if(!cache_hit) {
@@ -1102,24 +1143,15 @@ char Keys[1040];
                 /* remove captured piece from piece list  */
                 index_to_pos[piece_to_index(capt_piece)] = 0;
 
-                /* recursion or count end leaf */
                 if(depth == 1) {
+                    // Leaf node.
                     nodecount++;
                     count++;
                 } else {
+                    // Non-leaf node - recurse...
                     perft(other_color(color), move_stack.at(i), depth-1, d+1);
-                    
-                    if(HashFlag) {
-                        if(true/*change to || for large entries only ->*/ && depth > 7) { //large entry
-                            Bucket->l.Signature1 = HighKey;
-                            Bucket->l.Signature2 = HashKey;
-                            Bucket->l.longCount  = count - SavCnt;
-                        } else { // packed entry
-                            Bucket->s.Signature[store] = HighKey;
-                            Bucket->s.Extension[store] = (HashKey>>32) & ~1; // erase low bit
-                            Bucket->s.Count[store]     = count - SavCnt;
-                        }
-                    }
+                    // Save the node and count in the hash.
+                    hash_update(depth, Bucket, store, count - SavCnt);
                 }
                 /* retract move */
 
@@ -1132,27 +1164,9 @@ char Keys[1040];
                 board[capt_pos] = capt_piece;
                 board[from] = piece;
             }
-            
-            // Undo special moves.
-            if(EP_MODE < mode) {           // Castling or promo
-                if(mode <= PROMO_MODE_Q) { // Promo
-                    // Demote to Pawn again.
-                    if(index_to_kind[piece_index] == KNIGHT_KIND) {
-                        color_to_last_knight_index[color]--;
-                    } else {
-                        color_to_first_slider_index[color]++;
-                    }
-                    piece = oldpiece;
-                    piece_index = piece_to_index(piece);
-                    index_to_pos[piece_index] = from;
-                    board[from] = piece;
-                } else {                   // Castling
-                    /* undo Rook move */
-                    board[rook_from] = board[rook_to];
-                    board[rook_to] = DUMMY;
-                    index_to_pos[board[rook_from]-WHITE] = rook_from;
-                }
-            }
+
+            // Revert special effects.
+            undo_special_moves(color, move, piece_index, orig_piece);
 
             HashKey = OldKey;
             HighKey = OldHKey;
