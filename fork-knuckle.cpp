@@ -621,7 +621,8 @@ char Keys[1040];
                             //pstack[psp++] = pinned_piece_index;
                             pstack[psp++] = pinned_piece;
                             
-                            if(is_pawn_piece_index(pinned_piece_index)) {
+                            //if(is_pawn_piece_index(pinned_piece_index)) {
+                            if(is_pawn_piece(pinned_piece)) {
                                 if(!(check_dir&7)) { // Pawn along file
                                     // Generate non-captures.
                                     if(is_unoccupied(pinned_pos+fw)) {
