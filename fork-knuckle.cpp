@@ -60,7 +60,6 @@ char *Zob[2*NPCE];
 
     // Various maps from piece (in pieces list) to various piece data
     unsigned char *const piece_to_kind = (pc+1-WHITE);
-    unsigned char *const cstl = (pc+1+NPCE);
     unsigned char *const piece_to_cstl = (pc+1+NPCE-WHITE);
     unsigned char *const piece_to_pos = (pc+1+NPCE*2-WHITE);
     unsigned char *const piece_to_capt_code = (pc+1+NPCE*3-WHITE);
@@ -197,12 +196,6 @@ char Keys[1040];
         }
 
         // Castling spoilers (King and both original Rooks) - not sure what the shifts are for???
-        // cstl[KING_INDEX]           = WHITE;
-        // cstl[Q_ROOK_INDEX]         = WHITE>>2;
-        // cstl[K_ROOK_INDEX]         = WHITE>>4;
-        // cstl[KING_INDEX + WHITE]   = BLACK;
-        // cstl[Q_ROOK_INDEX + WHITE] = BLACK>>2;
-        // cstl[K_ROOK_INDEX + WHITE] = BLACK>>4;
         piece_to_cstl[KING_INDEX + WHITE]   = WHITE;
         piece_to_cstl[Q_ROOK_INDEX + WHITE] = WHITE>>2;
         piece_to_cstl[K_ROOK_INDEX + WHITE] = WHITE>>4;
@@ -254,7 +247,6 @@ char Keys[1040];
         int color;
         
         /* remove all pieces */
-        //for(int i=0; i<NPCE; i++) piece_to_pos[WHITE+i] = cstl[i] = 0;
         for(int i=0; i<NPCE; i++) piece_to_pos[i+WHITE] = piece_to_cstl[i+WHITE] = 0;
         color_to_first_slider_index[WHITE] = 0x10;
         color_to_first_slider_index[BLACK] = 0x30;
@@ -314,7 +306,6 @@ char Keys[1040];
                     piece_to_kind[nr+WHITE] = piece_kind;
                     piece_to_capt_code[nr+WHITE] = KIND_TO_CAPT_CODE[piece_kind];
                     Zob[nr]  = Keys + 128*piece_kind + (color&BLACK)/8 - 0x22;
-                    //cstl[nr] = cc;
                     piece_to_cstl[nr+WHITE] = cc;
                     CasRights |= cc;       /* remember K & R on original location */
                     file++;
@@ -329,7 +320,6 @@ char Keys[1040];
         }
         if(piece_to_pos[king_piece(WHITE)] == 0 || piece_to_pos[king_piece(BLACK)] == 0) return -5; /* missing king */
         /* now do castle rights and side to move */
-        //cstl[DUMMY-WHITE]=0;
         piece_to_cstl[DUMMY]=0;
         int cc = 0;
         while((c = *p++)) {
@@ -1157,7 +1147,6 @@ char Keys[1040];
 
             const int piece_index = piece_to_index(piece), capt_piece = board[capt_pos];
 
-            //CasRights |= cstl[piece_index] | cstl[piece_to_index(capt_piece)];
             CasRights |= piece_to_cstl[piece] | piece_to_cstl[capt_piece];
 
             // Output vars - should be const
