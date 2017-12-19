@@ -496,20 +496,20 @@ char Keys[1040];
     //   the target position - we still have to check that no other pieces are sitting in-between.
     // @return true iff the given piece is attacking/defending the target position,
     //                including slider pieces with another piece in between.
-    bool is_attacking_weak2(const int piece, const int piece_pos, const int target_pos) const {
+    bool is_attacking_weak(const int piece, const int piece_pos, const int target_pos) const {
         int piece_capt_code = piece_to_capt_code[piece];
         int dir_capt_code = DIR_TO_CAPT_CODE[piece_pos - target_pos];
         return is_common_capt_code(piece_capt_code, dir_capt_code);
     }
 
     // @return true iff the given non-slider piece is attacking (or defending) the target position.
-    bool is_attacking_non_slider2(const int piece, const int piece_pos, const int target_pos) const {
-        return is_attacking_weak2(piece, piece_pos, target_pos);
+    bool is_attacking_non_slider(const int piece, const int piece_pos, const int target_pos) const {
+        return is_attacking_weak(piece, piece_pos, target_pos);
     }
 
     // @return true iff the given slider piece is attacking (or defending) the target position.
     bool is_attacking_slider(const int slider, const int slider_pos, const int target_pos) const {
-        if(is_attacking_weak2(slider, slider_pos, target_pos)) {
+        if(is_attacking_weak(slider, slider_pos, target_pos)) {
             int dir = delta_vec[slider_pos - target_pos]; // Single square move.
             // Baby steps from target piece back towards slider.
             int between_pos; for(between_pos = target_pos + dir; is_empty(between_pos); between_pos += dir) { /*nada*/ }
@@ -549,7 +549,7 @@ char Keys[1040];
     }
 
     // @return the piece index associated with this piece.
-    static int piece_to_index(const int piece) { return piece - WHITE; }
+    //static int piece_to_index(const int piece) { return piece - WHITE; }
 
     // @return true iff the given piece pos is on the given slider's ray (regardless of whether there are other pieces in between).
     bool is_on_slider_ray(const int piece_pos, const int slider_pos, const int slider) const {
@@ -582,7 +582,7 @@ char Keys[1040];
                            && next_nonempty(pinned_pos, check_dir) == slider_pos) {  // Next piece on ray is the enemy slider - we're pinned!
 
                             // Remove from piece list and put on pin stack.
-                            const int pinned_piece_index = piece_to_index(pinned_piece);
+                            //const int pinned_piece_index = piece_to_index(pinned_piece);
                             ppos[psp] = piece_to_pos[pinned_piece];
                             piece_to_pos[pinned_piece] = 0;
                             //pstack[psp++] = pinned_piece_index;
@@ -679,7 +679,7 @@ char Keys[1040];
                 const int attacker_pos = next_nonempty(next_piece_pos+check_dir, check_dir);
                 const int attacker_piece = board[attacker_pos];
                 if(!is_color(color, attacker_piece)) { // Note - is_color is true for both colors for guards
-                    const int attacker_index = piece_to_index(attacker_piece);
+                    //const int attacker_index = piece_to_index(attacker_piece);
                     const int attacker_kind = piece_to_kind[attacker_piece];
                     //printf("                                                            RPJ!!!! Bingo EP into check - attacker kind %d\n", attacker_kind);
                     return attacker_kind == ROOK_KIND || attacker_kind == QUEEN_KIND;
@@ -729,7 +729,7 @@ char Keys[1040];
 
         // Knights
         FOREACH_KNIGHT(color, {
-                if(is_attacking_non_slider2(knight_piece, knight_pos, checker_pos)) {
+                if(is_attacking_non_slider(knight_piece, knight_pos, checker_pos)) {
                     push_move(knight_pos, checker_pos);
                 }
             });
@@ -923,7 +923,7 @@ char Keys[1040];
 
         // Check knights and opposition king.
         FOREACH_KNIGHT_OR_KING(color, {
-                if(is_attacking_non_slider2(knight_or_king_piece, knight_or_king_pos, piece_pos)) { return knight_or_king_piece+WHITE + 256; }
+                if(is_attacking_non_slider(knight_or_king_piece, knight_or_king_pos, piece_pos)) { return knight_or_king_piece+WHITE + 256; }
             });
 
         // Check sliders.
@@ -1028,7 +1028,7 @@ char Keys[1040];
             } else if(mode <= PROMO_MODE_Q) {
                 // Promotion - replace pawn with promo piece kind
                 const int orig_piece = piece;
-                int piece_index = piece_to_index(piece);
+                //int piece_index = piece_to_index(piece);
                 piece_to_pos[piece] = 0;
                 const int promo_kind = mode - PROMO_MODE;
                 if(promo_kind == KNIGHT_KIND) {
@@ -1038,11 +1038,11 @@ char Keys[1040];
                     // Sliders into sliders list
                     piece = --color_to_first_slider_piece[color];
                 }
-                piece_index = piece_to_index(piece);
+                //piece_index = piece_to_index(piece);
                 piece_to_pos[piece]  = from;
                 piece_to_kind[piece] = promo_kind;
                 piece_to_capt_code[piece] = KIND_TO_CAPT_CODE[promo_kind];
-                Zob[piece_index]  = Keys + 128*promo_kind + (color&BLACK)/8 - 0x22;
+                Zob[piece-WHITE]  = Keys + 128*promo_kind + (color&BLACK)/8 - 0x22;
                 update_hash_key_for_promo(orig_piece, piece, from);
                 Index += 14457159; // Prevent clash with non-promotion moves.
             } else {
@@ -1058,13 +1058,13 @@ char Keys[1040];
         }
     }
     
-    void undo_special_moves(const int color, const Move move, const int piece_index, const int orig_piece) {
+    void undo_special_moves(const int color, const Move move, const int piece, const int orig_piece) {
         const int from = move.from(), to = move.to(), mode = move.mode();
 
         if(EP_MODE < mode) {           // Castling or promo
             if(mode <= PROMO_MODE_Q) { // Promo
                 // Demote to Pawn again.
-                if(piece_to_kind[piece_index+WHITE] == KNIGHT_KIND) {
+                if(piece_to_kind[piece] == KNIGHT_KIND) {
                     color_to_last_knight_piece[color]--;
                 } else {
                     color_to_first_slider_piece[color]++;
@@ -1136,7 +1136,8 @@ char Keys[1040];
             // Special handling for castling, en-passant and promotion.
             prepare_special_moves(color, move, piece, capt_pos, Index);
 
-            const int piece_index = piece_to_index(piece), capt_piece = board[capt_pos];
+            //const int piece_index = piece_to_index(piece),
+            const int capt_piece = board[capt_pos];
 
             CasRights |= piece_to_cstl[piece] | piece_to_cstl[capt_piece];
 
@@ -1167,7 +1168,7 @@ char Keys[1040];
             }
 
             // Revert special effects.
-            undo_special_moves(color, move, piece_index, orig_piece);
+            undo_special_moves(color, move, piece, orig_piece);
 
             // Restore state prior to move
             HashKey = OldKey; HighKey = OldHKey; CasRights = SavRights;
