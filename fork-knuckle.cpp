@@ -78,7 +78,7 @@ char          *const delta_vec  = ((char *) brd+1+0xBC+0xEF+0x77); /* step to br
 char Keys[1040];
 int path[100];
     uint32_t stack[1024];
-    int msp = 0, ep1, ep2, Kmoves, Split, epSqr, HashSize, HashSection;
+    int msp = 0, Kmoves, Split, epSqr, HashSize, HashSection;
 uint64_t HashKey=8729767686LL, HighKey=1234567890LL, count, epcnt, xcnt, ckcnt, cascnt, promcnt, nodecount;
 FILE *f;
 clock_t ttt[30];
@@ -857,7 +857,6 @@ clock_t ttt[30];
     void gen_moves2(const int color, int last_move, int d, CheckData& check_data) {
         int pstack[12], ppos[12], psp=0, first_move=msp;
         int ep_pos = move_mode(last_move);
-        ep1 = ep2 = msp;
 
         // Pinned-piece moves and non-contact check detection.
         gen_pincheck_moves(color, check_data, pstack, ppos, psp);
@@ -868,8 +867,6 @@ clock_t ttt[30];
         // Remove moves with pinned pieces if in check.
         if(check_data.in_check) { msp = first_move; }
         
-        ep1 = msp; // Save start of en-passant/castling moves.
-
         // If we're not in double check, then generate moves for all pieces, otherwise only king moves are allowed
         if(!check_data.in_double_check()) {
             // Generate castlings.
@@ -878,8 +875,6 @@ clock_t ttt[30];
             // Generate en-passant captures (at most two).
             gen_ep_captures(color, ep_pos, check_data);
         
-            ep2 = msp; // Save end of en-passant/castling moves.
-
             // On contact check only King retreat or capture helps.
             // Use a specialized recapture generator in that case.
             if(check_data.in_contact_check()) {
@@ -934,7 +929,7 @@ void perft(const int color, int last_move, int depth, int d)
 {   /* recursive perft, with in-lined make/unmake */
     int i, j, h, oldpiece, store;
     int piece, victim, from, to, capt, mode;
-    int SavRights = CasRights, lep2, lkm, Index;
+    int SavRights = CasRights, lkm, Index;
     uint64_t ocnt=count, OldKey = HashKey, OldHKey = HighKey, SavCnt;
     union _bucket *Bucket;
     int local_count = 0, local_n_moves = 0;
@@ -944,7 +939,7 @@ void perft(const int color, int last_move, int depth, int d)
     CheckData check_data;
     gen_moves(color, last_move, d, check_data); /* generate moves */
     nodecount++;
-    lep2 = ep2; lkm = Kmoves; local_n_moves = msp - first_move;
+    lkm = Kmoves; local_n_moves = msp - first_move;
 
 #ifndef NO_BULK_COUNTS
     if(depth == 1) {
