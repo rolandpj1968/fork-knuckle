@@ -1086,9 +1086,27 @@ char Keys[1040];
         }
     }
 
+    // Update board and pieces list.
+    void make_move(const int piece, const int from, const int to, const int capt_piece, const int capt_pos) {
+        board[capt_pos] = board[from] = DUMMY;
+        board[to] = piece;
+        
+        index_to_pos[piece_to_index(piece)] = to;
+        index_to_pos[piece_to_index(capt_piece)] = 0;
+    }
+    
+    // Revert board and pieces list.
+    void unmake_move(const int piece, const int from, const int to, const int capt_piece, const int capt_pos) {
+        index_to_pos[piece_to_index(piece)] = from;
+        index_to_pos[piece_to_index(capt_piece)] = capt_pos;
+
+        board[to] = DUMMY;
+        board[capt_pos] = capt_piece;
+        board[from] = piece;
+    }
+    
     // Count leaf nodes at given depth.
     void perft(const int color, Move last_move, int depth, int d) {
-        int store;
         int SavRights = CasRights;
         uint64_t OldKey = HashKey, OldHKey = HighKey;
 
@@ -1124,25 +1142,21 @@ char Keys[1040];
             prepare_special_moves(color, move, piece, capt_pos, Index);
 
             const int piece_index = piece_to_index(piece), capt_piece = board[capt_pos];
+
             CasRights |= cstl[piece_index] | cstl[piece_to_index(capt_piece)];
 
-            bool cache_hit = false;
+            // Output vars - should be const
+            bool cache_hit = false; int store = 0;
 
-            // This updates the count as a side-effect.
+            // This updates the count as a side-effect on a cache hit.
             union _bucket *Bucket = hash_lookup(color, depth, piece, from, to, capt_piece, capt_pos, Index, cache_hit, store);
 
+            // If we didn't find a cached value in the hash then we have to do the hard yards.
             if(!cache_hit) {
-                /* perform move, in piece list and on board */
-                /* update board position */
-                board[capt_pos] = board[from] = DUMMY;
-                board[to] = piece;
+                // Move
+                make_move(piece, from, to, capt_piece, capt_pos);
 
-                /* update piece location in piece list    */
-                index_to_pos[piece_index] = to;
-
-                /* remove captured piece from piece list  */
-                index_to_pos[piece_to_index(capt_piece)] = 0;
-
+                // Calculate the count.
                 if(depth == 1) {
                     // Leaf node.
                     nodecount++;
@@ -1153,24 +1167,16 @@ char Keys[1040];
                     // Save the node and count in the hash.
                     hash_update(depth, Bucket, store, count - SavCnt);
                 }
-                /* retract move */
 
-                /* restore piece list */
-                index_to_pos[piece_index] = from;
-                index_to_pos[piece_to_index(capt_piece)] = capt_pos;
-
-                /* restore board */
-                board[to] = DUMMY;      /* restore board  */
-                board[capt_pos] = capt_piece;
-                board[from] = piece;
+                // Take back the move
+                unmake_move(piece, from, to, capt_piece, capt_pos);
             }
 
             // Revert special effects.
             undo_special_moves(color, move, piece_index, orig_piece);
 
-            HashKey = OldKey;
-            HighKey = OldHKey;
-            CasRights = SavRights;
+            // Restore state prior to move
+            HashKey = OldKey; HighKey = OldHKey; CasRights = SavRights;
         }
 
         move_stack.pop_to(first_move); /* throw away moves */
