@@ -410,60 +410,28 @@ char Keys[1040];
     // Push a pawn move to the move stack - and add promo flag where required.
     void push_ep_pawn_move(const int from, const int to) { push_move(from, to, to); }
 
-    // @return Base index for the color.
-    static int base_index(const int color) { return color-WHITE; }
-    
-    // @return Piece index of the King.
-    static int king_index(const int color) { return base_index(color) + KING_INDEX; }
-
     // @return King piece of the given color.
     static int king_piece(const int color) { return color + KING_INDEX; }
 
     // @return Piece index of the first pawn.
-    //int first_pawn_piece(const int color) { return color_to_first_pawn_piece[color]; }
-
-    // @return Piece index of the first pawn.
-    static int last_pawn_index(const int color) { return color-WHITE+PAWNS_INDEX+8 - 1; }
-
-    // @return Piece index of the first pawn.
     static int last_pawn_piece(const int color) { return color+PAWNS_INDEX+8 - 1; }
-
-    // @return Piece index of the first knight.
-    static int first_knight_index(const int color) { return king_index(color) + 1; }
 
     // @return First knight piece.
     static int first_knight_piece(const int color) { return king_piece(color) + 1; }
     
     // @return Piece index of the last knight.
-    int last_knight_index(const int color) const { return color_to_last_knight_piece[color]-WHITE; }
-
-    // @return Piece index of the last knight.
     int last_knight_piece(const int color) const { return color_to_last_knight_piece[color]; }
-
-    // @return Piece index of the first slider.
-    int first_slider_index(const int color) const { return color_to_first_slider_piece[color]-WHITE; }
 
     // @return Piece index of the first slider.
     int first_slider_piece(const int color) const { return color_to_first_slider_piece[color]; }
 
-    // @return Piece index of the last slider.
-    static int last_slider_index(const int color) { return base_index(color) + LAST_SLIDER_INDEX; }
-    
     // @return Piece index of the last slider.
     static int last_slider_piece(const int color) { return color + LAST_SLIDER_INDEX; }
     
     // @return true iff the two capture codes have at least one common flag.
     static bool is_common_capt_code(const int capt_code_1, const int capt_code_2) { return capt_code_1 & capt_code_2; }
 
-#   define FOREACH_PIECE(first_piece_index, last_piece_index, block) do { \
-        const int first_piece_index__ = (first_piece_index), last_piece_index__ = (last_piece_index); \
-        for(int piece_index__ = first_piece_index__; piece_index__ <= last_piece_index__; piece_index__++) { \
-            const int piece_pos__ = piece_to_pos[piece_index__+WHITE]; if(piece_pos__ == 0) continue; \
-            do block while(false); \
-        } \
-    } while(false)
-
-#   define FOREACH_PIECE2(first_piece, last_piece, block) do { \
+#   define FOREACH_PIECE(first_piece, last_piece, block) do { \
         const int first_piece__ = (first_piece), last_piece__ = (last_piece); \
         for(int piece__ = first_piece__; piece__ <= last_piece__; piece__++) { \
             const int piece_pos__ = piece_to_pos[piece__]; if(piece_pos__ == 0) continue; \
@@ -473,7 +441,7 @@ char Keys[1040];
 
 #   define FOREACH_KNIGHT(color, block) do {                            \
         const int color__ = (color);                                    \
-        FOREACH_PIECE2(first_knight_piece(color__), last_knight_piece(color__), { \
+        FOREACH_PIECE(first_knight_piece(color__), last_knight_piece(color__), { \
                 const int knight_piece = piece__; const int knight_pos = piece_pos__; \
                 do block while(false);                                  \
             });                                                         \
@@ -481,7 +449,7 @@ char Keys[1040];
     
 #   define FOREACH_PAWN(color, block) do {                            \
         const int color__ = (color);                                    \
-        FOREACH_PIECE2(color_to_first_pawn_piece[color__], last_pawn_piece(color__), { \
+        FOREACH_PIECE(color_to_first_pawn_piece[color__], last_pawn_piece(color__), { \
                 const int pawn_piece = piece__; const int pawn_pos = piece_pos__; \
                 do block while(false);                                  \
             });                                                         \
@@ -489,7 +457,7 @@ char Keys[1040];
     
 #   define FOREACH_KNIGHT_OR_KING(color, block) do {                    \
         const int color__ = (color);                                    \
-        FOREACH_PIECE2(king_piece(color__), color_to_last_knight_piece[color__], { \
+        FOREACH_PIECE(king_piece(color__), color_to_last_knight_piece[color__], { \
                 const int knight_or_king_piece = piece__; const int knight_or_king_pos = piece_pos__; \
                 do block while(false);                                  \
             });                                                         \
@@ -497,7 +465,7 @@ char Keys[1040];
     
 #   define FOREACH_SLIDER(color, block) do {                            \
         const int color__ = (color);                                    \
-        FOREACH_PIECE2(first_slider_piece(color__), last_slider_piece(color__), { \
+        FOREACH_PIECE(first_slider_piece(color__), last_slider_piece(color__), { \
                 const int slider_piece = piece__; const int slider_pos = piece_pos__; \
                 do block while(false);                                  \
             });                                                         \
