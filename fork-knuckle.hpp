@@ -106,6 +106,9 @@ static const int MODE_SHIFT = 24;
 // Move modes
 static const int EP_MODE    = 0xA0;
 static const int PROMO_MODE = 0xA1;
+static const int CAS_MODE   = 0xB0;
+static const int CAS_MODE_K = CAS_MODE + RT+RT+RT;
+static const int CAS_MODE_Q = CAS_MODE + LT+LT+LT+LT;
 
 static const int EP_SHIFTED    = EP_MODE    << MODE_SHIFT;
 static const int PROMO_SHIFTED = PROMO_MODE << MODE_SHIFT;

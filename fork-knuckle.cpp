@@ -627,13 +627,13 @@ clock_t ttt[30];
                && is_empty(king_pos+RT) && is_empty(king_pos+RT+RT)
                && !is_attacked_by(other_color(color), king_pos+RT) && !is_attacked_by(other_color(color), king_pos+RT+RT)
                ) {
-                push_move(king_pos, king_pos+RT+RT, 0xB0 + 0x03);
+                push_move(king_pos, king_pos+RT+RT, CAS_MODE_K);
             }
             if(has_castling_rights_queenside(color)
                && is_empty(king_pos+LT) && is_empty(king_pos+LT+LT) && is_empty(king_pos+LT+LT+LT)
                && !is_attacked_by(other_color(color), king_pos+LT) && !is_attacked_by(other_color(color), king_pos+LT+LT)
                ) {
-                push_move(king_pos, king_pos+LT+LT, 0xB0 - 0x04);
+                push_move(king_pos, king_pos+LT+LT, CAS_MODE_Q);
             }
         }
     }
@@ -984,7 +984,7 @@ path[d] = stack[i];
                 HighKey ^= Zobrist(piece, from+8) ^ Zobrist(oldpiece, from+8);
                 Index += 14457159; /* prevent hits by non-promotion moves */
             } else {   /* castling, determine Rook move  */
-                j = mode - 0xB0 + from;
+                j = mode - CAS_MODE + from;
                 h = (from+to) >> 1;
                 /* move Rook                      */
                 board[h] = board[j];
