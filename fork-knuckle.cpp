@@ -440,8 +440,14 @@ char Keys[1040];
     // @return Piece index of the first slider.
     int first_slider_index(const int color) const { return color_to_first_slider_piece[color]-WHITE; }
 
+    // @return Piece index of the first slider.
+    int first_slider_piece(const int color) const { return color_to_first_slider_piece[color]; }
+
     // @return Piece index of the last slider.
     static int last_slider_index(const int color) { return base_index(color) + LAST_SLIDER_INDEX; }
+    
+    // @return Piece index of the last slider.
+    static int last_slider_piece(const int color) { return color + LAST_SLIDER_INDEX; }
     
     // @return true iff the two capture codes have at least one common flag.
     static bool is_common_capt_code(const int capt_code_1, const int capt_code_2) { return capt_code_1 & capt_code_2; }
@@ -488,8 +494,8 @@ char Keys[1040];
     
 #   define FOREACH_SLIDER(color, block) do {                            \
         const int color__ = (color);                                    \
-        FOREACH_PIECE(first_slider_index(color__), last_slider_index(color__), { \
-                const int slider = piece_index__+WHITE; const int slider_pos = piece_pos__; \
+        FOREACH_PIECE2(first_slider_piece(color__), last_slider_piece(color__), { \
+                const int slider_piece = piece__; const int slider_pos = piece_pos__; \
                 do block while(false);                                  \
             });                                                         \
     } while(false)  
@@ -606,7 +612,7 @@ char Keys[1040];
         //   on pin stack for rest of move generation, after generating its
         //   moves along the pin line.
         FOREACH_SLIDER(other_color(color), {
-                if(is_on_slider_ray(king_pos, slider_pos, slider)) {
+                if(is_on_slider_ray(king_pos, slider_pos, slider_piece)) {
                     // Slider aimed at our king.
                     const int check_dir = delta_vec[slider_pos - king_pos];
                     const int pinned_pos = next_nonempty(king_pos, check_dir);
@@ -774,7 +780,7 @@ char Keys[1040];
 
         // Sliders
         FOREACH_SLIDER(color, {
-                if(is_attacking_slider(slider, slider_pos, checker_pos)) {
+                if(is_attacking_slider(slider_piece, slider_pos, checker_pos)) {
                     push_move(slider_pos, checker_pos);
                 }
             });
@@ -820,7 +826,7 @@ char Keys[1040];
         } while(false)
             
         FOREACH_SLIDER(color, {
-                const int slider_kind = piece_to_kind[slider];
+                const int slider_kind = piece_to_kind[slider_piece];
 
                 if(slider_kind != BISHOP_KIND) {
                     // All 4 rook rays for Rook and Queen.
@@ -966,7 +972,7 @@ char Keys[1040];
 
         // Check sliders.
         FOREACH_SLIDER(color, {
-                if(is_attacking_slider(slider, slider_pos, piece_pos)) { return slider-WHITE + 512; }
+                if(is_attacking_slider(slider_piece, slider_pos, piece_pos)) { return slider_piece-WHITE + 512; }
             });
         
         return 0;
