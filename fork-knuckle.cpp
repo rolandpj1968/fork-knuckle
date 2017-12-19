@@ -451,7 +451,7 @@ char Keys[1040];
 #   define FOREACH_PIECE2(first_piece, last_piece, block) do { \
         const int first_piece__ = (first_piece), last_piece__ = (last_piece); \
         for(int piece__ = first_piece__; piece__ <= last_piece__; piece__++) { \
-            const int piece_pos__ = piece_to_pos[piece_index__]; if(piece_pos__ == 0) continue; \
+            const int piece_pos__ = piece_to_pos[piece__]; if(piece_pos__ == 0) continue; \
             do block while(false); \
         } \
     } while(false)
@@ -472,10 +472,18 @@ char Keys[1040];
             });                                                         \
     } while(false)  
     
-#   define FOREACH_KNIGHT_OR_KING(color, block) do {                    \
+#   define FOREACH_KNIGHT_OR_KING3(color, block) do {                    \
         const int color__ = (color);                                    \
         FOREACH_PIECE(king_index(color__), last_knight_index(color__), { \
                 const int knight_or_king_index = piece_index__; const int knight_or_king_pos = piece_pos__; \
+                do block while(false);                                  \
+            });                                                         \
+    } while(false)  
+    
+#   define FOREACH_KNIGHT_OR_KING2(color, block) do {                    \
+        const int color__ = (color);                                    \
+        FOREACH_PIECE2(king_piece(color__), color_to_last_knight_piece[color__], { \
+                const int knight_or_king_piece = piece__; const int knight_or_king_pos = piece_pos__; \
                 do block while(false);                                  \
             });                                                         \
     } while(false)  
@@ -534,6 +542,11 @@ char Keys[1040];
         return is_attacking_weak(piece_index, piece_pos, target_pos);
     }
 
+    // @return true iff the given non-slider piece is attacking (or defending) the target position.
+    bool is_attacking_non_slider2(const int piece, const int piece_pos, const int target_pos) const {
+        return is_attacking_weak2(piece, piece_pos, target_pos);
+    }
+
     // @return true iff the given slider piece is attacking (or defending) the target position.
     bool is_attacking_slider(const int slider, const int slider_pos, const int target_pos) const {
         if(is_attacking_weak2(slider, slider_pos, target_pos)) {
@@ -579,12 +592,7 @@ char Keys[1040];
     static int piece_to_index(const int piece) { return piece - WHITE; }
 
     // @return true iff the given piece pos is on the given slider's ray (regardless of whether there are other pieces in between).
-    bool is_on_slider_ray(const int piece_pos, const int slider_pos, const int slider_index) const {
-        return DIR_TO_CAPT_CODE[slider_pos-piece_pos] & piece_to_capt_code[slider_index+WHITE] & C_DISTANT;
-    }
-
-    // @return true iff the given piece pos is on the given slider's ray (regardless of whether there are other pieces in between).
-    bool is_on_slider_ray2(const int piece_pos, const int slider_pos, const int slider) const {
+    bool is_on_slider_ray(const int piece_pos, const int slider_pos, const int slider) const {
         return DIR_TO_CAPT_CODE[slider_pos-piece_pos] & piece_to_capt_code[slider] & C_DISTANT;
     }
 
@@ -600,7 +608,7 @@ char Keys[1040];
         //   on pin stack for rest of move generation, after generating its
         //   moves along the pin line.
         FOREACH_SLIDER(other_color(color), {
-                if(is_on_slider_ray2(king_pos, slider_pos, slider)) {
+                if(is_on_slider_ray(king_pos, slider_pos, slider)) {
                     // Slider aimed at our king.
                     const int check_dir = delta_vec[slider_pos - king_pos];
                     const int pinned_pos = next_nonempty(king_pos, check_dir);
@@ -954,8 +962,8 @@ char Keys[1040];
         if(is_pawn(color, piece_pos+bw+LT)) { return 2; }
 
         // Check knights and opposition king.
-        FOREACH_KNIGHT_OR_KING(color, {
-                if(is_attacking_non_slider(knight_or_king_index, knight_or_king_pos, piece_pos)) { return knight_or_king_index + 256; }
+        FOREACH_KNIGHT_OR_KING2(color, {
+                if(is_attacking_non_slider2(knight_or_king_piece, knight_or_king_pos, piece_pos)) { return knight_or_king_piece+WHITE + 256; }
             });
 
         // Check sliders.
