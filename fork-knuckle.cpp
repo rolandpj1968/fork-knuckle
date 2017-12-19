@@ -603,6 +603,11 @@ char Keys[1040];
         return DIR_TO_CAPT_CODE[slider_pos-piece_pos] & piece_to_capt_code[slider_index+WHITE] & C_DISTANT;
     }
 
+    // @return true iff the given piece pos is on the given slider's ray (regardless of whether there are other pieces in between).
+    bool is_on_slider_ray2(const int piece_pos, const int slider_pos, const int slider) const {
+        return DIR_TO_CAPT_CODE[slider_pos-piece_pos] & piece_to_capt_code[slider] & C_DISTANT;
+    }
+
     // All pinned pieces are removed from lists.
     // All their remaining legal moves are generated.
     // All distant checks are detected.
@@ -614,8 +619,8 @@ char Keys[1040];
         // If aiming at King & 1 piece of us in between, park this piece
         //   on pin stack for rest of move generation, after generating its
         //   moves along the pin line.
-        FOREACH_SLIDER(other_color(color), {
-                if(is_on_slider_ray(king_pos, slider_pos, slider_index)) {
+        FOREACH_SLIDER2(other_color(color), {
+                if(is_on_slider_ray2(king_pos, slider_pos, slider)) {
                     // Slider aimed at our king.
                     const int check_dir = delta_vec[slider_pos - king_pos];
                     const int pinned_pos = next_nonempty(king_pos, check_dir);
@@ -974,8 +979,8 @@ char Keys[1040];
             });
 
         // Check sliders.
-        FOREACH_SLIDER(color, {
-                if(is_attacking_slider(slider_index, slider_pos, piece_pos)) { return slider_index + 512; }
+        FOREACH_SLIDER2(color, {
+                if(is_attacking_slider2(slider, slider_pos, piece_pos)) { return slider-WHITE + 512; }
             });
         
         return 0;
