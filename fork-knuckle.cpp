@@ -462,15 +462,7 @@ char Keys[1040];
         } \
     } while(false)
 
-#   define FOREACH_KNIGHT3(color, block) do {                            \
-        const int color__ = (color);                                    \
-        FOREACH_PIECE(first_knight_index(color__), last_knight_index(color__), { \
-                const int knight_index = piece_index__; const int knight_pos = piece_pos__; \
-                do block while(false);                                  \
-            });                                                         \
-    } while(false)  
-    
-#   define FOREACH_KNIGHT2(color, block) do {                            \
+#   define FOREACH_KNIGHT(color, block) do {                            \
         const int color__ = (color);                                    \
         FOREACH_PIECE2(first_knight_piece(color__), last_knight_piece(color__), { \
                 const int knight_piece = piece__; const int knight_pos = piece_pos__; \
@@ -774,7 +766,7 @@ char Keys[1040];
         if(is_pawn(color, checker_pos+bw+RT) && !is_pinned(checker_pos+bw+RT)) { push_pawn_move(color, checker_pos+bw+RT, checker_pos); }
 
         // Knights
-        FOREACH_KNIGHT2(color, {
+        FOREACH_KNIGHT(color, {
                 if(is_attacking_non_slider2(knight_piece, knight_pos, checker_pos)) {
                     push_move(knight_pos, checker_pos);
                 }
@@ -811,7 +803,7 @@ char Keys[1040];
     // All knight moves.
     void gen_knight_moves(const int color) {
 #       define M(dir) maybe_gen_move(color, knight_pos, (dir))
-        FOREACH_KNIGHT2(color, {
+        FOREACH_KNIGHT(color, {
                 // All 8 knight directions.
                 M(FRR); M(FFR); M(FFL); M(FLL); M(BLL); M(BBL); M(BBR); M(BRR);
             });
