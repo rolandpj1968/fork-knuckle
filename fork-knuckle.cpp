@@ -76,8 +76,17 @@ char          *const delta_vec  = ((char *) brd+1+0xBC+0xEF+0x77); /* step to br
     char noUnder = 0; // Non-zero to fobid under-promotions.
 
 char Keys[1040];
+
     struct Move {
     private:
+        // Move in uint32 representation:
+        // High byte:           mode/flags, e.g. ep, castling, check
+        // Second highest byte: (unused)
+        // Second lowest byte:  from_pos
+        // Low byte:            to_pos
+        static const int FROM_SHIFT =  8;
+        static const int MODE_SHIFT = 24;
+
         // Contruct a move in integer representation with 'to' in the low byte and 'from' in the second lowest byte
         static int mk_move(const int from_pos, const int to_pos) { return (from_pos << FROM_SHIFT) | to_pos; }
 
@@ -376,10 +385,6 @@ char Keys[1040];
             check_dir = dir;
         }
     };
-
-    static int move_to(const int move) { return move & 0xFF; }
-    static int move_from(const int move) { return (move >> FROM_SHIFT) & 0xFF; }
-    static int move_mode(const int move) { return (move >> MODE_SHIFT) & 0xFF; }
 
     // Push a normal move.
     void push_move(const int from_pos, const int to_pos) { move_stack.push(Move(from_pos, to_pos)); }
@@ -980,16 +985,9 @@ void perft(const int color, Move last_move, int depth, int d)
                 if(promo_kind == KNIGHT_KIND) {
                     // Knight into knight list
                     piece = ++color_to_last_knight_index[color]+WHITE;
-                    index_to_pos[piece-WHITE]  = from;
-                    index_to_kind[piece-WHITE] = KNIGHT_KIND;
-                    Zob[piece-WHITE]  = Keys + 128*KNIGHT_KIND + (color&BLACK)/8 - 0x22;
                 } else {
                     // Sliders into sliders list
                     piece = --color_to_first_slider_index[color]+WHITE;
-                    index_to_kind[piece-WHITE] = QUEEN_KIND;
-                    index_to_capt_code[piece-WHITE] = C_QUEEN;
-                    Zob[piece-WHITE]  = Keys + 128*QUEEN_KIND + (color&BLACK)/8 - 0x22;
-                    index_to_pos[piece-WHITE]  = from;
                 }
                 index_to_pos[piece-WHITE]  = from;
                 index_to_kind[piece-WHITE] = promo_kind;
@@ -1157,8 +1155,7 @@ quick:
         else         printf("No hashing");
         printf("\n\n");
 
-        for(int i=1; i<=Dep; i++)
-        {
+        for(int i=1; i<=Dep; i++) {
             Move last_move(checker_pos(color), 0, (epSqr^0x10));
             clock_t t = clock();
             count = epcnt = xcnt = ckcnt = cascnt = promcnt = 0;
@@ -1170,17 +1167,16 @@ quick:
         }
     }
 
-void setup_hash(int size) {
-    HashSize = size;
+    void setup_hash(int size) {
+        HashSize = size;
 
-    {    HashSection = (1<<(HashSize-3)) - 1; HashSize = (1<<HashSize) - 2;
-         Hash = (union _bucket *) calloc(HashSize+4, sizeof(union _bucket) );
-         Hash = (union _bucket *) (((uint64_t)Hash + 63) & ~63);
-         printf("Hash-table size = %x, Starts at %lx,section = %x\n", HashSize+1, (long)Hash, HashSection);
-         HashFlag++;
-         for(int i=128; i<1040; i++) Keys[i] = rand()>>6;
+        HashSection = (1<<(HashSize-3)) - 1; HashSize = (1<<HashSize) - 2;
+        Hash = (union _bucket *) calloc(HashSize+4, sizeof(union _bucket) );
+        Hash = (union _bucket *) (((uint64_t)Hash + 63) & ~63);
+        printf("Hash-table size = %x, Starts at %lx,section = %x\n", HashSize+1, (long)Hash, HashSection);
+        HashFlag++;
+        for(int i=128; i<1040; i++) Keys[i] = rand()>>6;
     }
-}
 
 /**
  * @return color
