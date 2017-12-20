@@ -269,12 +269,12 @@ char Keys[1040];
                 else {
                     color = WHITE;
                     if(c >= 'a') { c += 'A'-'a'; color = BLACK; }
-                    int piece_kind = BISHOP_KIND, cc = 0, nr;
+                    int piece_kind = BISHOP_KIND, cc = 0, piece;
                     switch(c) {
                     case 'K':
                         if(piece_to_pos[king_piece(color)] > 0) return -1;   // two kings illegal
                         piece_kind = KING_KIND;
-                        nr = color-WHITE;
+                        piece = king_piece(color);
                         if(0x20*row == 7*(color-WHITE) && file == 4) cc = (color|color>>2|color>>4);
                         
                         break;
@@ -287,26 +287,26 @@ char Keys[1040];
                     case 'Q': piece_kind += 2;
                     case 'B': 
                         if(--color_to_first_slider_piece[color] <= color_to_last_knight_piece[color]) return(-2);
-                        nr = color_to_first_slider_piece[color]-WHITE;
+                        piece = color_to_first_slider_piece[color];
                         break;
                     case 'P': 
                         if(--color_to_first_pawn_piece[color] < color+FW) return(-4);
-                        nr = color_to_first_pawn_piece[color]-WHITE;
+                        piece = color_to_first_pawn_piece[color];
                         piece_kind = color>>5;
                         break;
                     case 'N': 
                         if(color_to_first_slider_piece[color] <= ++color_to_last_knight_piece[color]) return(-3);
-                        nr = color_to_last_knight_piece[color]-WHITE;
+                        piece = color_to_last_knight_piece[color];
                         piece_kind = KNIGHT_KIND;
                         break;
                     default:
                         return -15;
                     }
-                    piece_to_pos[nr+WHITE] = ((file +  16*row) & 0x77) + 0x22;
-                    piece_to_kind[nr+WHITE] = piece_kind;
-                    piece_to_capt_code[nr+WHITE] = KIND_TO_CAPT_CODE[piece_kind];
-                    Zob[nr]  = Keys + 128*piece_kind + (color&BLACK)/8 - 0x22;
-                    piece_to_cstl[nr+WHITE] = cc;
+                    piece_to_pos[piece] = ((file +  16*row) & 0x77) + 0x22;
+                    piece_to_kind[piece] = piece_kind;
+                    piece_to_capt_code[piece] = KIND_TO_CAPT_CODE[piece_kind];
+                    Zob[piece-WHITE]  = Keys + 128*piece_kind + (color&BLACK)/8 - 0x22;
+                    piece_to_cstl[piece] = cc;
                     CasRights |= cc;       /* remember K & R on original location */
                     file++;
                 }
@@ -547,9 +547,6 @@ char Keys[1040];
         while(is_empty(ray_pos)) { ray_pos += dir; }
         return ray_pos;
     }
-
-    // @return the piece index associated with this piece.
-    //static int piece_to_index(const int piece) { return piece - WHITE; }
 
     // @return true iff the given piece pos is on the given slider's ray (regardless of whether there are other pieces in between).
     bool is_on_slider_ray(const int piece_pos, const int slider_pos, const int slider) const {
