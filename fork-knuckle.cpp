@@ -579,13 +579,10 @@ char Keys[1040];
                            && next_nonempty(pinned_pos, check_dir) == slider_pos) {  // Next piece on ray is the enemy slider - we're pinned!
 
                             // Remove from piece list and put on pin stack.
-                            //const int pinned_piece_index = piece_to_index(pinned_piece);
                             ppos[psp] = piece_to_pos[pinned_piece];
                             piece_to_pos[pinned_piece] = 0;
-                            //pstack[psp++] = pinned_piece_index;
                             pstack[psp++] = pinned_piece;
                             
-                            //if(is_pawn_piece_index(pinned_piece_index)) {
                             if(is_pawn_piece(pinned_piece)) {
                                 if(!(check_dir&7)) { // Pawn along file
                                     // Generate non-captures.
@@ -676,7 +673,6 @@ char Keys[1040];
                 const int attacker_pos = next_nonempty(next_piece_pos+check_dir, check_dir);
                 const int attacker_piece = board[attacker_pos];
                 if(!is_color(color, attacker_piece)) { // Note - is_color is true for both colors for guards
-                    //const int attacker_index = piece_to_index(attacker_piece);
                     const int attacker_kind = piece_to_kind[attacker_piece];
                     //printf("                                                            RPJ!!!! Bingo EP into check - attacker kind %d\n", attacker_kind);
                     return attacker_kind == ROOK_KIND || attacker_kind == QUEEN_KIND;
@@ -1025,7 +1021,6 @@ char Keys[1040];
             } else if(mode <= PROMO_MODE_Q) {
                 // Promotion - replace pawn with promo piece kind
                 const int orig_piece = piece;
-                //int piece_index = piece_to_index(piece);
                 piece_to_pos[piece] = 0;
                 const int promo_kind = mode - PROMO_MODE;
                 if(promo_kind == KNIGHT_KIND) {
@@ -1035,7 +1030,6 @@ char Keys[1040];
                     // Sliders into sliders list
                     piece = --color_to_first_slider_piece[color];
                 }
-                //piece_index = piece_to_index(piece);
                 piece_to_pos[piece]  = from;
                 piece_to_kind[piece] = promo_kind;
                 piece_to_capt_code[piece] = KIND_TO_CAPT_CODE[promo_kind];
@@ -1133,7 +1127,6 @@ char Keys[1040];
             // Special handling for castling, en-passant and promotion.
             prepare_special_moves(color, move, piece, capt_pos, Index);
 
-            //const int piece_index = piece_to_index(piece),
             const int capt_piece = board[capt_pos];
 
             CasRights |= piece_to_cstl[piece] | piece_to_cstl[capt_piece];
