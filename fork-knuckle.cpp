@@ -1266,31 +1266,46 @@ char Keys[1040];
         return s;
     }
     
-    void play_negamax(const int color, const int depth) {
-        // while(true) {
-        // }
-
+    void play_negamax(int color, const int depth) {
         printf("ForkKnuckle Extreme Edition 0.0 - MiniMax depth %d, %s to play:\n\n", depth, (color == WHITE ? "white" : "black"));
         pboard(board, 12, 0);
         printf("\n");
 
-        Move last_move(checker_pos(color), 0, (epSqr^0x10));
-        clock_t t = clock();
+        while(true) {
         
-        Move best_move;
+            Move last_move(checker_pos(color), 0, (epSqr^0x10));
+            clock_t t = clock();
+            
+            Move best_move;
+            
+            int eval = negamax(color, last_move, depth, best_move);
+            
+            // No legal move - checkmate or stalemate
+            if(best_move.is_empty()) {
+                printf("Game over: %d\n", eval ? "checkmate" : "stalemate");
+                break;
+            }
+            
+            t = clock()-t;
+            
+            char from_str[3]; pos_str(best_move.from(), from_str); char to_str[3]; pos_str(best_move.to(), to_str);
+            printf("Best move %s %s: %d cp (%6.3f sec)\n\n", from_str, to_str, eval, t*(1./CLOCKS_PER_SEC));
 
-        int eval = negamax(color, last_move, depth, best_move);
+            // Perform move and swap color.
+            const int from = best_move.from(), to = best_move.to(), mode = best_move.mode();
+            int piece = board[from];
+            int capt_pos = to;
+            int Index; // ignore
+            prepare_special_moves(color, best_move, piece, capt_pos, Index);
+            const int capt_piece = board[capt_pos];
+            make_move(piece, from, to, capt_piece, capt_pos);
 
-        // No legal move - checkmate or stalemate
-        if(best_move.is_empty()) {
-            printf("Game over: %d\n", eval ? "checkmate" : "stalemate");
-            return;
+            color = other_color(color);
+
+            pboard(board, 12, 0);
+            printf("\n");
+            
         }
-
-        t = clock()-t;
-        
-        char from_str[3]; pos_str(best_move.from(), from_str); char to_str[3]; pos_str(best_move.to(), to_str);
-        printf("Best move %s %s: %d cp (%6.3f sec)\n", from_str, to_str, eval, t*(1./CLOCKS_PER_SEC));
     }
 
     void doit(int Dep, int color) {
