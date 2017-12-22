@@ -8,6 +8,9 @@
 #include <stdint.h>
 
 #include "fork-knuckle.hpp"
+#include "eval.hpp"
+
+using namespace SunfishEvalTables;
 
 /***************************************************************************/
 /* Move generator based on separate Slider/Leaper/Pawn tables .            */
@@ -64,16 +67,16 @@ char *Zob[2*NPCE];
     unsigned char *const piece_to_pos = (pc+1+NPCE*2-WHITE);
     unsigned char *const piece_to_capt_code = (pc+1+NPCE*3-WHITE);
 
-/* Piece counts hidden in the unused Pawn section, indexed by color */
-unsigned char *const last_knight_piece  = (piece_to_capt_code-4+WHITE);
-unsigned char *const first_slider_piece = (piece_to_capt_code-3+WHITE);
-unsigned char *const first_pawn_piece   = (piece_to_capt_code-2+WHITE);
+    /* Piece counts hidden in the unused Pawn section, indexed by color */
+    unsigned char *const last_knight_piece  = (piece_to_capt_code-4+WHITE);
+    unsigned char *const first_slider_piece = (piece_to_capt_code-3+WHITE);
+    unsigned char *const first_pawn_piece   = (piece_to_capt_code-2+WHITE);
 
-/* offset overlays to allow negative array subscripts      */
-/* and avoid cache collisions of these heavily used arrays */
-unsigned char *const board      = (brd+1);                /* 12 x 16 board: dbl guard band */
-unsigned char *const DIR_TO_CAPT_CODE  = (brd+1+0xBC+0x77);      /* piece type that can reach this*/
-char          *const delta_vec  = ((char *) brd+1+0xBC+0xEF+0x77); /* step to bridge certain vector */
+    /* offset overlays to allow negative array subscripts      */
+    /* and avoid cache collisions of these heavily used arrays */
+    unsigned char *const board      = (brd+1);                /* 12 x 16 board: dbl guard band */
+    unsigned char *const DIR_TO_CAPT_CODE  = (brd+1+0xBC+0x77);      /* piece type that can reach this*/
+    char          *const delta_vec  = ((char *) brd+1+0xBC+0xEF+0x77); /* step to bridge certain vector */
 
     char noUnder = 0; // Non-zero to fobid under-promotions.
 
@@ -1099,12 +1102,18 @@ char Keys[1040];
         CheckData check_data;
         gen_moves(color, last_move, d, check_data); /* generate moves */
 
-#ifndef NO_BULK_COUNTS
+        const int eval = full_eval(color);
+        printf("Eval: %4d: \n\n", eval);
+        pboard(board, 12, 0);
+        
+        
+#define xUSE_BULK_COUNTS
+#ifdef USE_BULK_COUNTS
         if(depth == 1) {
             count += move_stack.pop_to(first_move);
             return;
         }
-#endif //def NO_BULK_COUNTS
+#endif //def USE_BULK_COUNTS
     
         for(int i = first_move; i < move_stack.msp; i++) {
             const uint64_t SavCnt = count;
@@ -1233,6 +1242,35 @@ char Keys[1040];
         
         return color;
     }
+
+    int pawns_eval(const int color) const {
+        int eval = 0;
+        FOREACH_PAWN(color, { eval += kind_to_val(W_PAWN_KIND) + kind_pos_to_val(color, W_PAWN_KIND, pawn_pos); /*printf("               after pawn pos %02x, eval -> %3d\n", pawn_pos, eval);*/ });
+        return eval;
+    }
+
+    int knights_eval(const int color) const {
+        int eval = 0;
+        printf("              (starting FOREACH_KNIGHT - kind_to_val(KNIGHT_KIND) is %d)\n", kind_to_val(KNIGHT_KIND));
+        FOREACH_KNIGHT(color, { eval += kind_to_val(KNIGHT_KIND) + kind_pos_to_val(color, KNIGHT_KIND, knight_pos); printf("               after knight pos %02x, eval -> %3d\n", knight_pos, eval);});
+        return eval;
+    }
+
+    int sliders_eval(const int color) const {
+        int eval = 0;
+        FOREACH_SLIDER(color, { const int kind = piece_to_kind[slider_piece]; eval += kind_to_val(kind) + kind_pos_to_val(color, kind, slider_pos); });
+        return eval;
+    }
+
+    int king_eval(const int color) const { return kind_to_val(KING_KIND) + kind_pos_to_val(color, KING_KIND, king_pos(color)); }
+
+    // Eval of this color's pieces only.
+    int half_eval(const int color) const {
+        return pawns_eval(color) + knights_eval(color) + sliders_eval(color) + king_eval(color);
+    }
+    
+    // Full position evaluation - from perspective of given color.
+    int full_eval(const int color) const { return half_eval(color) - half_eval(other_color(color)); }
     
 }; //class P
 
@@ -1242,6 +1280,8 @@ int main(int argc, char **argv)
                *Fritz = "r3r1k1/1pq2pp1/2p2n2/1PNn4/2QN2b1/6P1/3RPP2/2R3KB b - -";
     int depth = 6;
 
+    printf("RPJ - pos_to_index_64(WHITE, 0x24) is %d, pos_to_index_64(BLACK, 0x24) is %d\n", pos_to_index_64(WHITE, 0x24), pos_to_index_64(BLACK, 0x24));
+    
     if(argc > 1 && !strcmp(argv[1], "-u")) {
 	argc--; argv++;
     }
