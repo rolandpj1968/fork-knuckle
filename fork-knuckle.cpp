@@ -1265,6 +1265,20 @@ char Keys[1040];
         s[2] = 0;
         return s;
     }
+
+    char* move_pgn_str(int piece, int from, int to, int mode, bool is_capture, char* pgn) {
+        static const char* PGN_KIND[8] = { "", "", "", "N", "B", "R", "Q", "K" };
+
+        if(mode == CAS_MODE_K) {
+            sprintf(pgn, "O-O");
+        } else if(mode == CAS_MODE_Q) {
+            sprintf(pgn, "O-O-O");
+        } else {
+            char from_str[3]; pos_str(from, from_str); char to_str[3]; pos_str(to, to_str);
+            sprintf(pgn, "%s%s%s%s", PGN_KIND[piece_to_kind[piece]], from_str, (is_capture ? "x" : ""), to_str);
+        }
+        return pgn;
+    }
     
     void play_negamax(int color, const int depth) {
         printf("ForkKnuckle Extreme Edition 0.0 - MiniMax depth %d, %s to play:\n\n", depth, (color == WHITE ? "white" : "black"));
@@ -1298,13 +1312,18 @@ char Keys[1040];
             int Index; // ignore
             prepare_special_moves(color, best_move, piece, capt_pos, Index);
             const int capt_piece = board[capt_pos];
+            CasRights |= piece_to_cstl[piece] | piece_to_cstl[capt_piece];
             make_move(piece, from, to, capt_piece, capt_pos);
+
+            char pgn[7]; move_pgn_str(piece, from, to, mode, capt_piece != DUMMY, pgn);
+            fprintf(stderr, "%s ", pgn);
 
             color = other_color(color);
 
             pboard(board, 12, 0);
             printf("\n");
-            
+
+            break;
         }
     }
 
