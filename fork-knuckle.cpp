@@ -107,13 +107,15 @@ char Keys[1040];
         Move(const uint8_t from_pos, const uint8_t to_pos) :
             move(mk_move(from_pos, to_pos)) {}
 
-        Move() {}
+        Move(): move(0) {}
 
         int to() const { return move & 0xFF; }
 
         int from() const { return (move >> FROM_SHIFT) & 0xFF; }
 
         int mode() const { return (move >> MODE_SHIFT) & 0xFF; }
+
+        bool is_empty() const { return move == 0; }
     };
 
     struct MoveStack {
@@ -855,7 +857,7 @@ char Keys[1040];
 
     // Legal move generator.
     // Only wrinkle is with promo's - only the queen promo move is generated, and the caller has to generate under-promo's manually.
-    void gen_moves(const int color, Move last_move, int d, CheckData& check_data) {
+    void gen_moves(const int color, Move last_move, CheckData& check_data) {
         int pstack[12], ppos[12], psp=0, first_move = move_stack.msp;
         int ep_pos = last_move.mode();
 
@@ -1088,23 +1090,92 @@ char Keys[1040];
         board[capt_pos] = capt_piece;
         board[from] = piece;
     }
+
+    // @return eval
+    int negamax(const int color, const Move last_move, const int depth, Move& best_move) {
+        // Save state.
+        int SavRights = CasRights;
+        const int first_move = move_stack.msp;
+
+        CheckData check_data;
+        gen_moves(color, last_move, check_data);
+
+        //printf("     depth %d - %d moves\n", depth, move_stack.msp - first_move);
+
+        // If there are no valid moves, then this is checkmate or stalemate.
+        if(move_stack.msp == first_move) {
+            if(check_data.in_check) { return -60000 - depth; } // checkmate - prefer shallower checkmates
+            else                    { return 0; }              // stalemate
+        }
+
+        // No quiescence for now...
+        int best_eval = -1000000;
+
+        for(int i = first_move; i < move_stack.msp; i++) {
+            const uint64_t SavCnt = count;
+            const Move move = move_stack.at(i);
+            const int from = move.from(), to = move.to(), mode = move.mode();
+        
+            int piece = board[from]; int orig_piece = piece;
+            int capt_pos = to;
+
+            int Index; // unused
+            // Special handling for castling, en-passant and promotion.
+            prepare_special_moves(color, move, piece, capt_pos, Index);
+
+            const int capt_piece = board[capt_pos];
+
+            CasRights |= piece_to_cstl[piece] | piece_to_cstl[capt_piece];
+
+            make_move(piece, from, to, capt_piece, capt_pos);
+
+            int move_eval;
+            // Calculate the count.
+            if(depth <= 1) {
+                // Leaf node.
+                move_eval = full_eval(color);
+            } else {
+                // Non-leaf node - recurse...
+                Move best_child_move; // ignored...
+                move_eval = -negamax(other_color(color), move, depth-1, best_child_move);
+            }
+
+            if(move_eval > best_eval) {
+                best_move = move;
+                best_eval = move_eval;
+            }
+
+            // Take back the move
+            unmake_move(piece, from, to, capt_piece, capt_pos);
+            
+            // Revert special effects.
+            undo_special_moves(color, move, piece, orig_piece);
+
+            // Restore state prior to move
+            CasRights = SavRights;
+        }
+
+        move_stack.pop_to(first_move); /* throw away moves */
+
+        return best_eval;
+    }
     
     // Count leaf nodes at given depth.
-    void perft(const int color, Move last_move, int depth, int d) {
+    void perft(const int color, const Move last_move, const int depth, const int d) {
         // Save state.
         int SavRights = CasRights;
         uint64_t OldKey = HashKey, OldHKey = HighKey;
 
-        TIME(17)
+        TIME(17);
 
-        const int first_move = move_stack.msp; /* new area on move stack */
+        const int first_move = move_stack.msp; // Our area on move stack
 
         CheckData check_data;
-        gen_moves(color, last_move, d, check_data); /* generate moves */
+        gen_moves(color, last_move, check_data);
 
-        const int eval = full_eval(color);
-        printf("Eval: %4d: \n\n", eval);
-        pboard(board, 12, 0);
+        // const int eval = full_eval(color);
+        // printf("Eval: %4d: \n\n", eval);
+        // pboard(board, 12, 0);
         
         
 #define xUSE_BULK_COUNTS
@@ -1188,6 +1259,40 @@ char Keys[1040];
         return 0;
     }
 
+    char* pos_str(int pos, char* s) {
+        s[0] = "abcdefgh"[pos_file(pos)];
+        s[1] = "12345678"[pos_rank(pos)];
+        s[2] = 0;
+        return s;
+    }
+    
+    void play_negamax(const int color, const int depth) {
+        // while(true) {
+        // }
+
+        printf("ForkKnuckle Extreme Edition 0.0 - MiniMax depth %d, %s to play:\n\n", depth, (color == WHITE ? "white" : "black"));
+        pboard(board, 12, 0);
+        printf("\n");
+
+        Move last_move(checker_pos(color), 0, (epSqr^0x10));
+        clock_t t = clock();
+        
+        Move best_move;
+
+        int eval = negamax(color, last_move, depth, best_move);
+
+        // No legal move - checkmate or stalemate
+        if(best_move.is_empty()) {
+            printf("Game over: %d\n", eval ? "checkmate" : "stalemate");
+            return;
+        }
+
+        t = clock()-t;
+        
+        char from_str[3]; pos_str(best_move.from(), from_str); char to_str[3]; pos_str(best_move.to(), to_str);
+        printf("Best move %s %s: %d cp (%6.3f sec)\n", from_str, to_str, eval, t*(1./CLOCKS_PER_SEC));
+    }
+
     void doit(int Dep, int color) {
 
         printf("Quick Perft by H.G. Muller\n");
@@ -1251,8 +1356,8 @@ char Keys[1040];
 
     int knights_eval(const int color) const {
         int eval = 0;
-        printf("              (starting FOREACH_KNIGHT - kind_to_val(KNIGHT_KIND) is %d)\n", kind_to_val(KNIGHT_KIND));
-        FOREACH_KNIGHT(color, { eval += kind_to_val(KNIGHT_KIND) + kind_pos_to_val(color, KNIGHT_KIND, knight_pos); printf("               after knight pos %02x, eval -> %3d\n", knight_pos, eval);});
+        //printf("              (starting FOREACH_KNIGHT - kind_to_val(KNIGHT_KIND) is %d)\n", kind_to_val(KNIGHT_KIND));
+        FOREACH_KNIGHT(color, { eval += kind_to_val(KNIGHT_KIND) + kind_pos_to_val(color, KNIGHT_KIND, knight_pos); /*printf("               after knight pos %02x, eval -> %3d\n", knight_pos, eval);*/});
         return eval;
     }
 
@@ -1311,6 +1416,7 @@ int main(int argc, char **argv)
         exit(0);
     }
 
-    p.doit(depth, color);
+    p.play_negamax(color, depth);
+    //p.doit(depth, color);
 }
 
