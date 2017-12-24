@@ -1178,7 +1178,7 @@ char Keys[1040];
 
     // Alpha-beta
     // @return eval
-    /*NegamabResult*/int negamab(const int color, const Move last_move, const int depth, int alpha, int beta, Move& best_move) {
+    NegamabResult negamab(const int color, const Move last_move, const int depth, int alpha, int beta) {
         // Save state.
         int SavRights = CasRights;
         const int orig_msp = move_stack.msp;
@@ -1188,73 +1188,39 @@ char Keys[1040];
 
         //printf("     depth %d - %d moves in_check = %d\n", depth, move_stack.msp - orig_msp, check_data.in_check);
 
-        // If there are no valid moves, then this is checkmate or stalemate.
+        // If there are no valid moves, then this is checkmate or stalemate - prefer shallower checkmates.
         if(move_stack.msp == orig_msp) {
-            if(check_data.in_check) { return -60000 - depth; } // checkmate - prefer shallower checkmates
-            else                    { return 0; }              // stalemate
+            return NegamaxResult(check_data.in_check ? -60000 - depth/*checkmate*/ : 0);
         }
 
         // No quiescence for now...
-        //NegamaxResult result(-1000000);
-        int best_eval = -1000000;
+        NegamabResult result(-1000000);
+        //int best_eval = -1000000;
 
         // Process captures before non-captures
         for(int is_non_capture = 0; is_non_capture <= 1 && alpha <= beta; is_non_capture++) {
             for(int i = orig_msp; i < move_stack.msp && alpha <= beta; i++) {
                 const Move move = move_stack.at(i);
-                const int to = move.to();
+                if(is_empty(move.to()) != is_non_capture) { continue; }
 
-                const int move_is_non_capture = is_empty(to);
-                if(move_is_non_capture != is_non_capture) { continue; }
-            
-                const int from = move.from(), mode = move.mode();
-        
-                int piece = board[from]; int orig_piece = piece;
-                int capt_pos = to;
+                const MoveUndoInfo undo_info = make_full_move(color, move);
 
-                int Index; // unused
-                // Special handling for castling, en-passant and promotion.
-                prepare_special_moves(color, move, piece, capt_pos, Index);
-
-                const int capt_piece = board[capt_pos];
-
-                CasRights |= piece_to_cstl[piece] | piece_to_cstl[capt_piece];
-
-                make_move(piece, from, to, capt_piece, capt_pos);
-
-                int move_eval;
-                // Calculate the count.
-                if(depth <= 1) {
-                    // Leaf node.
-                    move_eval = full_eval(color);
-                } else {
-                    // Non-leaf node - recurse...
-                    Move best_child_move; // ignored...
-                    move_eval = -negamab(other_color(color), move, depth-1, -beta, -alpha, best_child_move);
+                int child_eval = depth <= 1
+                    ? full_eval(color)
+                    : - negamab(other_color(color), move, depth-1, -beta, -alpha).eval;
+                
+                if(result.eval < child_eval) {
+                    result = NegamaxResult(child_eval, move);
+                    if(alpha < child_eval) { alpha = child_eval; }
                 }
-
-                if(move_eval > best_eval) {
-                    best_move = move;
-                    best_eval = move_eval;
-                    if(move_eval > alpha) { alpha = move_eval; }
-                }
-
-                // Take back the move
-                unmake_move(piece, from, to, capt_piece, capt_pos);
             
-                // Revert special effects.
-                undo_special_moves(color, move, piece, orig_piece);
-
-                // Restore state prior to move
-                CasRights = SavRights;
-
-                //if(alpha >= beta) { break out; }
+                unmake_full_move(color, move, undo_info);
             }
         }
 
         move_stack.pop_to(orig_msp); // Discard moves
 
-        return best_eval;
+        return result;
     }
     
     // Count leaf nodes at given depth.
@@ -1388,20 +1354,20 @@ char Keys[1040];
             clock_t t = clock();
             
             //NegamaxResult result = negamax(color, last_move, depth);
-            Move best_move;
-            int eval = negamab(color, last_move, depth, -100000, 100000, best_move);
+            //Move best_move;
+            NegamaxResult result = negamab(color, last_move, depth, -100000, 100000);
             
             // No legal move - checkmate or stalemate
-            if(/*result.*/best_move.is_empty()) {
-                printf("Game over: %s\n", /*result.*/eval ? "checkmate" : "stalemate");
+            if(result.best_move.is_empty()) {
+                printf("Game over: %s\n", result.eval ? "checkmate" : "stalemate");
                 break;
             }
             
             t = clock()-t;
             
-            //const Move best_move = result.best_move;
+            const Move best_move = result.best_move;
             char from_str[3]; pos_str(best_move.from(), from_str); char to_str[3]; pos_str(best_move.to(), to_str);
-            printf("Best move %s %s: %d cp (%6.3f sec)\n\n", from_str, to_str, /*result.*/eval, t*(1./CLOCKS_PER_SEC));
+            printf("Best move %s %s: %d cp (%6.3f sec)\n\n", from_str, to_str, result.eval, t*(1./CLOCKS_PER_SEC));
 
             // Perform move and swap color.
             const int from = best_move.from(), to = best_move.to(), mode = best_move.mode();
