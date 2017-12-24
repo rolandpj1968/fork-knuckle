@@ -623,6 +623,8 @@ char Keys[1040];
         int king_pos = this->king_pos(color);
         int last_to = last_move.to();
 
+        //printf("  get_contact_check: last_move %x, last to %02x\n", last_move, last_to);
+        
         if(DIR_TO_CAPT_CODE[king_pos - last_to] & piece_to_capt_code[board[last_to]] & C_CONTACT) {
             check_data.add_contact_checker(last_to, delta_vec[last_to - king_pos]);
         }
@@ -856,7 +858,6 @@ char Keys[1040];
     }
 
     // Legal move generator.
-    // Only wrinkle is with promo's - only the queen promo move is generated, and the caller has to generate under-promo's manually.
     void gen_moves(const int color, Move last_move, CheckData& check_data) {
         int pstack[12], ppos[12], psp=0, first_move = move_stack.msp;
         int ep_pos = last_move.mode();
@@ -1091,8 +1092,91 @@ char Keys[1040];
         board[from] = piece;
     }
 
+    struct MoveUndoInfo {
+        int piece, orig_piece;
+        int capt_pos, capt_piece;
+        uint8_t orig_cas_rights;
+    };
+
+    // Do a full move including special move handling
+    MoveUndoInfo make_full_move(const int color, const Move move) {
+        const int from = move.from(), to = move.to(), mode = move.mode();
+        
+        MoveUndoInfo undo_info; undo_info.piece = undo_info.orig_piece = board[from]; undo_info.capt_pos = to;
+
+        int Index; // unused
+        // Special handling for castling, en-passant and promotion.
+        prepare_special_moves(color, move, undo_info.piece, undo_info.capt_pos, Index);
+        
+        undo_info.capt_piece = board[undo_info.capt_pos];
+
+        undo_info.orig_cas_rights = CasRights;
+        CasRights |= piece_to_cstl[undo_info.piece] | piece_to_cstl[undo_info.capt_piece];
+        
+        make_move(undo_info.piece, from, to, undo_info.capt_piece, undo_info.capt_pos);
+
+        return undo_info;
+    }
+
+    // Do a full move including special move handling
+    void unmake_full_move(const int color, const Move move, const MoveUndoInfo& undo_info) {
+        const int from = move.from(), to = move.to(), mode = move.mode();
+
+        // Take back the move
+        unmake_move(undo_info.piece, from, to, undo_info.capt_piece, undo_info.capt_pos);
+
+        CasRights = undo_info.orig_cas_rights;
+        
+        // Revert special effects.
+        undo_special_moves(color, move, undo_info.piece, undo_info.orig_piece);
+    }
+
+    struct NegamaxResult {
+        int eval;
+        Move best_move;
+
+        NegamaxResult(int eval, Move best_move): eval(eval), best_move(best_move) {}
+        NegamaxResult(int eval): eval(eval), best_move() {}
+    };
+    
+    // Mini-max
     // @return eval
-    int negamax(const int color, const Move last_move, const int depth, Move& best_move) {
+    NegamaxResult negamax(const int color, const Move last_move, const int depth) {
+        // Save state.
+        const int orig_msp = move_stack.msp;
+
+        CheckData check_data;
+        gen_moves(color, last_move, check_data);
+
+        // If there are no valid moves, then this is checkmate or stalemate - prefer shallower checkmates.
+        if(move_stack.msp == orig_msp) {
+            return NegamaxResult(check_data.in_check ? -60000 - depth/*checkmate*/ : 0);
+        }
+
+        // No quiescence for now...
+        NegamaxResult result(-1000000);
+
+        for(int i = orig_msp; i < move_stack.msp; i++) {
+            const Move move = move_stack.at(i);
+            const MoveUndoInfo undo_info = make_full_move(color, move);
+
+            int child_eval = depth <= 1
+                ? full_eval(color)
+                : - negamax(other_color(color), move, depth-1).eval;
+
+            if(result.eval < child_eval) { result = NegamaxResult(child_eval, move); }
+
+            unmake_full_move(color, move, undo_info);
+        }
+
+        move_stack.pop_to(orig_msp); // discard moves
+
+        return result;
+    }
+
+    // Alpha-beta
+    // @return eval
+    int negamab(const int color, const Move last_move, const int depth, int alpha, int beta, Move& best_move) {
         // Save state.
         int SavRights = CasRights;
         const int first_move = move_stack.msp;
@@ -1100,7 +1184,7 @@ char Keys[1040];
         CheckData check_data;
         gen_moves(color, last_move, check_data);
 
-        //printf("     depth %d - %d moves\n", depth, move_stack.msp - first_move);
+        //printf("     depth %d - %d moves in_check = %d\n", depth, move_stack.msp - first_move, check_data.in_check);
 
         // If there are no valid moves, then this is checkmate or stalemate.
         if(move_stack.msp == first_move) {
@@ -1111,48 +1195,58 @@ char Keys[1040];
         // No quiescence for now...
         int best_eval = -1000000;
 
-        for(int i = first_move; i < move_stack.msp; i++) {
-            const uint64_t SavCnt = count;
-            const Move move = move_stack.at(i);
-            const int from = move.from(), to = move.to(), mode = move.mode();
-        
-            int piece = board[from]; int orig_piece = piece;
-            int capt_pos = to;
+        // Process captures before non-captures
+        for(int is_non_capture = 0; is_non_capture <= 1 && alpha <= beta; is_non_capture++) {
+            for(int i = first_move; i < move_stack.msp && alpha <= beta; i++) {
+                const Move move = move_stack.at(i);
+                const int to = move.to();
 
-            int Index; // unused
-            // Special handling for castling, en-passant and promotion.
-            prepare_special_moves(color, move, piece, capt_pos, Index);
-
-            const int capt_piece = board[capt_pos];
-
-            CasRights |= piece_to_cstl[piece] | piece_to_cstl[capt_piece];
-
-            make_move(piece, from, to, capt_piece, capt_pos);
-
-            int move_eval;
-            // Calculate the count.
-            if(depth <= 1) {
-                // Leaf node.
-                move_eval = full_eval(color);
-            } else {
-                // Non-leaf node - recurse...
-                Move best_child_move; // ignored...
-                move_eval = -negamax(other_color(color), move, depth-1, best_child_move);
-            }
-
-            if(move_eval > best_eval) {
-                best_move = move;
-                best_eval = move_eval;
-            }
-
-            // Take back the move
-            unmake_move(piece, from, to, capt_piece, capt_pos);
+                const int move_is_non_capture = is_empty(to);
+                if(move_is_non_capture != is_non_capture) { continue; }
             
-            // Revert special effects.
-            undo_special_moves(color, move, piece, orig_piece);
+                const int from = move.from(), mode = move.mode();
+        
+                int piece = board[from]; int orig_piece = piece;
+                int capt_pos = to;
 
-            // Restore state prior to move
-            CasRights = SavRights;
+                int Index; // unused
+                // Special handling for castling, en-passant and promotion.
+                prepare_special_moves(color, move, piece, capt_pos, Index);
+
+                const int capt_piece = board[capt_pos];
+
+                CasRights |= piece_to_cstl[piece] | piece_to_cstl[capt_piece];
+
+                make_move(piece, from, to, capt_piece, capt_pos);
+
+                int move_eval;
+                // Calculate the count.
+                if(depth <= 1) {
+                    // Leaf node.
+                    move_eval = full_eval(color);
+                } else {
+                    // Non-leaf node - recurse...
+                    Move best_child_move; // ignored...
+                    move_eval = -negamab(other_color(color), move, depth-1, -beta, -alpha, best_child_move);
+                }
+
+                if(move_eval > best_eval) {
+                    best_move = move;
+                    best_eval = move_eval;
+                    if(move_eval > alpha) { alpha = move_eval; }
+                }
+
+                // Take back the move
+                unmake_move(piece, from, to, capt_piece, capt_pos);
+            
+                // Revert special effects.
+                undo_special_moves(color, move, piece, orig_piece);
+
+                // Restore state prior to move
+                CasRights = SavRights;
+
+                //if(alpha >= beta) { break out; }
+            }
         }
 
         move_stack.pop_to(first_move); /* throw away moves */
@@ -1287,23 +1381,25 @@ char Keys[1040];
 
         while(true) {
         
-            Move last_move(checker_pos(color), 0, (epSqr^0x10));
+            Move last_move(0 /*from*/, checker_pos(color) /*to*/, (epSqr^0x10));
             clock_t t = clock();
             
-            Move best_move;
-            
-            int eval = negamax(color, last_move, depth, best_move);
+            NegamaxResult result = negamax(color, last_move, depth);
+            // Move best_move;
+            // int eval = negamax(color, last_move, depth, best_move);
+            //int eval = negamab(color, last_move, depth, -100000, 100000, best_move);
             
             // No legal move - checkmate or stalemate
-            if(best_move.is_empty()) {
-                printf("Game over: %d\n", eval ? "checkmate" : "stalemate");
+            if(result.best_move.is_empty()) {
+                printf("Game over: %s\n", result.eval ? "checkmate" : "stalemate");
                 break;
             }
             
             t = clock()-t;
             
+            const Move best_move = result.best_move;
             char from_str[3]; pos_str(best_move.from(), from_str); char to_str[3]; pos_str(best_move.to(), to_str);
-            printf("Best move %s %s: %d cp (%6.3f sec)\n\n", from_str, to_str, eval, t*(1./CLOCKS_PER_SEC));
+            printf("Best move %s %s: %d cp (%6.3f sec)\n\n", from_str, to_str, result.eval, t*(1./CLOCKS_PER_SEC));
 
             // Perform move and swap color.
             const int from = best_move.from(), to = best_move.to(), mode = best_move.mode();
@@ -1323,7 +1419,7 @@ char Keys[1040];
             pboard(board, 12, 0);
             printf("\n");
 
-            break;
+            //break;
         }
     }
 
