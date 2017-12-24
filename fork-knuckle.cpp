@@ -1134,11 +1134,62 @@ char Keys[1040];
     struct NegamaxResult {
         int eval;
         Move best_move;
+        int max_depth;
 
-        NegamaxResult(int eval, Move best_move): eval(eval), best_move(best_move) {}
-        NegamaxResult(int eval): eval(eval), best_move() {}
+        NegamaxResult(int eval, Move best_move): eval(eval), best_move(best_move), max_depth(0) {}
+        NegamaxResult(int eval): eval(eval), best_move(), max_depth(0) {}
+
+        void merge(const NegamaxResult& child_result, Move move) {
+            if(eval < -child_result.eval) {
+                eval = -child_result.eval;
+                best_move = move;
+            }
+            if(max_depth < child_result.max_depth + 1) {
+                max_depth = child_result.max_depth + 1;
+            }
+        }
     };
     
+    // Mini-max by effort
+    // @return eval
+    NegamaxResult negamax2(const int color, const Move last_move, const double effort, const int d) {
+        // Save state.
+        const int orig_msp = move_stack.msp;
+
+        CheckData check_data;
+        gen_moves(color, last_move, check_data);
+
+        // If there are no valid moves, then this is checkmate or stalemate - prefer shallower checkmates.
+        if(move_stack.msp == orig_msp) {
+            return NegamaxResult(check_data.in_check ? -60000 + d/*checkmate*/ : 0);
+        }
+
+        // Update effort - consider each generated move effort 1.0
+        int n_moves = move_stack.msp - orig_msp;
+        double effort_per_child = (effort - n_moves)/n_moves;
+
+        // No quiescence for now...
+        NegamaxResult result(-1000000);
+
+        for(int i = orig_msp; i < move_stack.msp; i++) {
+            const Move move = move_stack.at(i);
+            const MoveUndoInfo undo_info = make_full_move(color, move);
+
+            NegamaxResult child_result = effort_per_child <= n_moves // use n_moves as an indicator of likely minimum child effort
+                ? NegamaxResult(-full_eval(color), move)
+                : negamax2(other_color(color), move, effort_per_child, d+1).eval;
+
+            result.merge(child_result, move);
+            //if(result.eval < child_eval) { result = NegamaxResult(child_eval, move); }
+
+            unmake_full_move(color, move, undo_info);
+        }
+
+        move_stack.pop_to(orig_msp); // discard moves
+
+        return result;
+    }
+
     // Mini-max
     // @return eval
     NegamaxResult negamax(const int color, const Move last_move, const int depth) {
@@ -1354,8 +1405,9 @@ char Keys[1040];
             clock_t t = clock();
             
             //NegamaxResult result = negamax(color, last_move, depth);
+            NegamaxResult result = negamax2(color, last_move, depth, 0/*root*/); // Note - depth here is really effort!
             //Move best_move;
-            NegamaxResult result = negamab(color, last_move, depth, -100000, 100000);
+            //NegamabResult result = negamab(color, last_move, depth, -100000, 100000);
             
             // No legal move - checkmate or stalemate
             if(result.best_move.is_empty()) {
@@ -1367,7 +1419,7 @@ char Keys[1040];
             
             const Move best_move = result.best_move;
             char from_str[3]; pos_str(best_move.from(), from_str); char to_str[3]; pos_str(best_move.to(), to_str);
-            printf("Best move %s %s: %d cp (%6.3f sec)\n\n", from_str, to_str, result.eval, t*(1./CLOCKS_PER_SEC));
+            printf("Best move %s %s: %d cp (depth %d, %6.3f sec)\n\n", from_str, to_str, result.eval, result.max_depth, t*(1./CLOCKS_PER_SEC));
 
             // Perform move and swap color.
             const int from = best_move.from(), to = best_move.to(), mode = best_move.mode();
