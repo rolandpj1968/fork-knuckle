@@ -1174,30 +1174,33 @@ char Keys[1040];
         return result;
     }
 
+#   define NegamabResult NegamaxResult
+
     // Alpha-beta
     // @return eval
-    int negamab(const int color, const Move last_move, const int depth, int alpha, int beta, Move& best_move) {
+    /*NegamabResult*/int negamab(const int color, const Move last_move, const int depth, int alpha, int beta, Move& best_move) {
         // Save state.
         int SavRights = CasRights;
-        const int first_move = move_stack.msp;
+        const int orig_msp = move_stack.msp;
 
         CheckData check_data;
         gen_moves(color, last_move, check_data);
 
-        //printf("     depth %d - %d moves in_check = %d\n", depth, move_stack.msp - first_move, check_data.in_check);
+        //printf("     depth %d - %d moves in_check = %d\n", depth, move_stack.msp - orig_msp, check_data.in_check);
 
         // If there are no valid moves, then this is checkmate or stalemate.
-        if(move_stack.msp == first_move) {
+        if(move_stack.msp == orig_msp) {
             if(check_data.in_check) { return -60000 - depth; } // checkmate - prefer shallower checkmates
             else                    { return 0; }              // stalemate
         }
 
         // No quiescence for now...
+        //NegamaxResult result(-1000000);
         int best_eval = -1000000;
 
         // Process captures before non-captures
         for(int is_non_capture = 0; is_non_capture <= 1 && alpha <= beta; is_non_capture++) {
-            for(int i = first_move; i < move_stack.msp && alpha <= beta; i++) {
+            for(int i = orig_msp; i < move_stack.msp && alpha <= beta; i++) {
                 const Move move = move_stack.at(i);
                 const int to = move.to();
 
@@ -1249,7 +1252,7 @@ char Keys[1040];
             }
         }
 
-        move_stack.pop_to(first_move); /* throw away moves */
+        move_stack.pop_to(orig_msp); // Discard moves
 
         return best_eval;
     }
@@ -1384,22 +1387,21 @@ char Keys[1040];
             Move last_move(0 /*from*/, checker_pos(color) /*to*/, (epSqr^0x10));
             clock_t t = clock();
             
-            NegamaxResult result = negamax(color, last_move, depth);
-            // Move best_move;
-            // int eval = negamax(color, last_move, depth, best_move);
-            //int eval = negamab(color, last_move, depth, -100000, 100000, best_move);
+            //NegamaxResult result = negamax(color, last_move, depth);
+            Move best_move;
+            int eval = negamab(color, last_move, depth, -100000, 100000, best_move);
             
             // No legal move - checkmate or stalemate
-            if(result.best_move.is_empty()) {
-                printf("Game over: %s\n", result.eval ? "checkmate" : "stalemate");
+            if(/*result.*/best_move.is_empty()) {
+                printf("Game over: %s\n", /*result.*/eval ? "checkmate" : "stalemate");
                 break;
             }
             
             t = clock()-t;
             
-            const Move best_move = result.best_move;
+            //const Move best_move = result.best_move;
             char from_str[3]; pos_str(best_move.from(), from_str); char to_str[3]; pos_str(best_move.to(), to_str);
-            printf("Best move %s %s: %d cp (%6.3f sec)\n\n", from_str, to_str, result.eval, t*(1./CLOCKS_PER_SEC));
+            printf("Best move %s %s: %d cp (%6.3f sec)\n\n", from_str, to_str, /*result.*/eval, t*(1./CLOCKS_PER_SEC));
 
             // Perform move and swap color.
             const int from = best_move.from(), to = best_move.to(), mode = best_move.mode();
