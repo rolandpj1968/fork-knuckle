@@ -119,14 +119,15 @@ char Keys[1040];
     };
 
     struct MoveStack {
-        Move stack[1024];
+        Move moves[2048];
+        int16_t eval_deltas[2048];
         int msp = 0;
 
-        void push(const Move move) { stack[msp++] = move; }
+        void push(const Move move) { if(msp < 0 || 2048 <= msp) { printf("\nBOOOOOOOOM!\n\n"); exit(1); } moves[msp++] = move; }
 
-        Move at(const int i) const { return stack[i]; }
+        //Move at(const int i) const { return move[i]; }
 
-        void swap_pop(const int i) { stack[i] = stack[--msp]; }
+        void swap_pop(const int i) { moves[i] = moves[--msp]; }
 
         int pop_to(const int i) {
             int n_popped = msp - i;
@@ -796,8 +797,8 @@ char Keys[1040];
         if(check_data.in_check) {
             int king_pos = this->king_pos(color);    // King position.
             for(int i = first_move; i < move_stack.msp; i++) {  // Go through all moves.
-                int to = move_stack.at(i).to();
-                int mode = move_stack.at(i).mode();
+                int to = move_stack.moves[i].to();
+                int mode = move_stack.moves[i].mode();
                 
                 if(delta_vec[to-king_pos] != check_data.check_dir) {
                     move_stack.swap_pop(i--); // Note, re-orders list. - we could compact in order instead.
@@ -858,8 +859,19 @@ char Keys[1040];
     }
 
     // Legal move generator.
+    void gen_moves_with_eval_deltas(const int color, Move last_move, CheckData& check_data) {
+        int orig_msp = move_stack.msp;
+
+        gen_moves(color, last_move, check_data);
+
+        for(int i = orig_msp; i < move_stack.msp; i++) {
+            move_stack.eval_deltas[i] = eval_delta(color, move_stack.moves[i]);
+        }
+    }
+        
+    // Legal move generator.
     void gen_moves(const int color, Move last_move, CheckData& check_data) {
-        int pstack[12], ppos[12], psp=0, first_move = move_stack.msp;
+        int pstack[12], ppos[12], psp=0, orig_msp = move_stack.msp;
         int ep_pos = last_move.mode();
 
         // Pinned-piece moves and non-contact check detection.
@@ -869,7 +881,7 @@ char Keys[1040];
         get_contact_check(color, last_move, check_data);
 
         // Remove moves with pinned pieces if in check.
-        if(check_data.in_check) { move_stack.pop_to(first_move); }
+        if(check_data.in_check) { move_stack.pop_to(orig_msp); }
         
         // If we're not in double check, then generate moves for all pieces, otherwise only king moves are allowed
         if(!check_data.in_double_check()) {
@@ -884,7 +896,7 @@ char Keys[1040];
             if(check_data.in_contact_check()) {
                 gen_piece_moves_in_contact_check(color, check_data.checker_pos);
             } else {
-                gen_piece_moves(color, first_move, check_data);
+                gen_piece_moves(color, orig_msp, check_data);
             }
         }
         
@@ -1206,7 +1218,7 @@ char Keys[1040];
         const int child_color = other_color(color);
 
         for(int i = orig_msp; i < move_stack.msp; i++) {
-            const Move move = move_stack.at(i);
+            const Move move = move_stack.moves[i];
             const MoveUndoInfo undo_info = make_full_move(color, move);
 
             NegamaxResult child_result = depth <= 1
@@ -1218,6 +1230,47 @@ char Keys[1040];
             unmake_full_move(color, move, undo_info);
         }
 
+        move_stack.pop_to(orig_msp); // discard moves
+
+        return result;
+    }
+
+    // Mini-max
+    // @return eval
+    NegamaxResult negamax1(const int color, const Move last_move, const int eval, const int depth) {
+        // Save state.
+        const int orig_msp = move_stack.msp;
+
+        CheckData check_data;
+        gen_moves_with_eval_deltas(color, last_move, check_data);
+
+        // If there are no valid moves, then this is checkmate or stalemate - prefer shallower checkmates.
+        if(move_stack.msp == orig_msp) {
+            return NegamaxResult(check_data.in_check ? -60000 - depth/*checkmate*/ : 0/*stalemate*/);
+        }
+
+        NegamaxResult result(-1000000);
+
+        if(depth <= 1) {
+            for(int i = orig_msp; i < move_stack.msp; i++) {
+                result.merge(NegamaxResult(eval + move_stack.eval_deltas[i]), move_stack.moves[i]);
+            }
+        } else {
+            // No quiescence for now...
+            const int child_color = other_color(color);
+            
+            for(int i = orig_msp; i < move_stack.msp; i++) {
+                const Move move = move_stack.moves[i];
+                const MoveUndoInfo undo_info = make_full_move(color, move);
+                
+                NegamaxResult child_result = negamax1(child_color, move, eval + move_stack.eval_deltas[i], depth-1);
+                
+                result.merge(child_result, move);
+                
+                unmake_full_move(color, move, undo_info);
+            }
+        }
+            
         move_stack.pop_to(orig_msp); // discard moves
 
         return result;
@@ -1246,7 +1299,7 @@ char Keys[1040];
         const int child_color = other_color(color);
 
         for(int i = orig_msp; i < move_stack.msp; i++) {
-            const Move move = move_stack.at(i);
+            const Move move = move_stack.moves[i];
             const MoveUndoInfo undo_info = make_full_move(color, move);
 
             NegamaxResult child_result = effort_per_child <= n_moves // use n_moves as an indicator of likely minimum child effort
@@ -1287,7 +1340,7 @@ char Keys[1040];
         // Process captures before non-captures
         for(int is_non_capture = 0; is_non_capture <= 1 && alpha <= beta; is_non_capture++) {
             for(int i = orig_msp; i < move_stack.msp && alpha <= beta; i++) {
-                const Move move = move_stack.at(i);
+                const Move move = move_stack.moves[i];
                 if(is_empty(move.to()) != is_non_capture) { continue; }
 
                 const MoveUndoInfo undo_info = make_full_move(color, move);
@@ -1334,7 +1387,7 @@ char Keys[1040];
         // Process captures before non-captures
         for(int is_non_capture = 0; is_non_capture <= 1 && alpha <= beta; is_non_capture++) {
             for(int i = orig_msp; i < move_stack.msp && alpha <= beta; i++) {
-                const Move move = move_stack.at(i);
+                const Move move = move_stack.moves[i];
                 if(is_empty(move.to()) != is_non_capture) { continue; }
 
                 const MoveUndoInfo undo_info = make_full_move(color, move);
@@ -1363,7 +1416,7 @@ char Keys[1040];
 
         TIME(17);
 
-        const int first_move = move_stack.msp; // Our area on move stack
+        const int orig_msp = move_stack.msp; // Our area on move stack
 
         CheckData check_data;
         gen_moves(color, last_move, check_data);
@@ -1376,20 +1429,20 @@ char Keys[1040];
 #define xUSE_BULK_COUNTS
 #ifdef USE_BULK_COUNTS
         if(depth == 1) {
-            count += move_stack.pop_to(first_move);
+            count += move_stack.pop_to(orig_msp);
             return;
         }
 #endif //def USE_BULK_COUNTS
     
-        for(int i = first_move; i < move_stack.msp; i++) {
+        for(int i = orig_msp; i < move_stack.msp; i++) {
             const uint64_t SavCnt = count;
-            const Move move = move_stack.at(i);
+            const Move move = move_stack.moves[i];
             const int from = move.from(), to = move.to(), mode = move.mode();
 
             int piece = board[from]; const int orig_piece = piece;
             int capt_pos = to;
 
-            path[d] = move_stack.at(i);
+            path[d] = move_stack.moves[i];
 
             int Index = 0;
 
@@ -1417,7 +1470,7 @@ char Keys[1040];
                     count++;
                 } else {
                     // Non-leaf node - recurse...
-                    perft(other_color(color), move_stack.at(i), depth-1, d+1);
+                    perft(other_color(color), move_stack.moves[i], depth-1, d+1);
                     // Save the node and count in the hash.
                     hash_update(depth, Bucket, store, count - SavCnt);
                 }
@@ -1433,7 +1486,7 @@ char Keys[1040];
             HashKey = OldKey; HighKey = OldHKey; CasRights = SavRights;
         }
 
-        move_stack.pop_to(first_move); /* throw away moves */
+        move_stack.pop_to(orig_msp); /* throw away moves */
     }
 
     int checker_pos(const int color) {
@@ -1486,10 +1539,11 @@ char Keys[1040];
             clock_t t = clock();
             
             //NegamaxResult result = negamax(color, last_move, depth);
+            NegamaxResult result = negamax1(color, last_move, full_eval(color), depth);
             //NegamaxResult result = negamax2(color, last_move, depth*1000000.0, 0/*root*/); // Note - depth here is really effort!
             //Move best_move;
             //NegamabResult result = negamab(color, last_move, depth, -100000, 100000);
-            NegamabResult result = negamab2(color, last_move, depth*1000000.0, 0/*root*/, -100000, 100000); // Note - depth here is really effort!
+            //NegamabResult result = negamab2(color, last_move, depth*1000000.0, 0/*root*/, -100000, 100000); // Note - depth here is really effort!
             
             // No legal move - checkmate or stalemate
             if(result.best_move.is_empty()) {
@@ -1616,7 +1670,7 @@ int main(int argc, char **argv)
                *Fritz = "r3r1k1/1pq2pp1/2p2n2/1PNn4/2QN2b1/6P1/3RPP2/2R3KB b - -";
     int depth = 6;
 
-    printf("RPJ - pos_to_index_64(WHITE, 0x24) is %d, pos_to_index_64(BLACK, 0x24) is %d\n", pos_to_index_64(WHITE, 0x24), pos_to_index_64(BLACK, 0x24));
+    //printf("RPJ - pos_to_index_64(WHITE, 0x24) is %d, pos_to_index_64(BLACK, 0x24) is %d\n", pos_to_index_64(WHITE, 0x24), pos_to_index_64(BLACK, 0x24));
     
     if(argc > 1 && !strcmp(argv[1], "-u")) {
 	argc--; argv++;
