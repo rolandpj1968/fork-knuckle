@@ -123,9 +123,10 @@ char Keys[1040];
         int16_t eval_deltas[2048];
         int msp = 0;
 
-        void push(const Move move) { if(msp < 0 || 2048 <= msp) { printf("\nBOOOOOOOOM!\n\n"); exit(1); } moves[msp++] = move; }
-
-        //Move at(const int i) const { return move[i]; }
+        void check(const int i) const { if(msp < 0 || 2048 <= msp) { printf("\nBOOOOOOOOM!\n\n"); exit(1); } }
+        void check() const { check(msp); }
+        
+        void push(const Move move) { moves[msp++] = move; }
 
         void swap_pop(const int i) { moves[i] = moves[--msp]; }
 
@@ -1263,7 +1264,7 @@ char Keys[1040];
                 const Move move = move_stack.moves[i];
                 const MoveUndoInfo undo_info = make_full_move(color, move);
                 
-                NegamaxResult child_result = negamax1(child_color, move, eval + move_stack.eval_deltas[i], depth-1);
+                NegamaxResult child_result = negamax1(child_color, move, -eval - move_stack.eval_deltas[i], depth-1);
                 
                 result.merge(child_result, move);
                 
