@@ -1009,7 +1009,7 @@ char Keys[1040];
         const int from = move.from(), to = move.to(), mode = move.mode();
 
         // Check for special moves.
-        if(move.mode()) {
+        if(mode) {
             if(mode < EP_MODE) {
                 // 2-square pawn move - change the hash if en-passant is possible.
                 if(((board[to+RT]^piece) & (COLOR|PAWNS_INDEX)) == COLOR ||
@@ -1131,6 +1131,41 @@ char Keys[1040];
         undo_special_moves(color, move, undo_info.piece, undo_info.orig_piece);
     }
 
+    // @return the difference to eval made by this move.
+    int eval_delta(const int color, const Move move) const {
+        int delta = 0;
+        const int from = move.from(), to = move.to(), mode = move.mode();
+        int capt_pos = to;
+
+        if(mode) {
+            if(mode < EP_MODE) { /*nada*/
+            } else if(mode == EP_MODE) {
+                // En-passant capture - capture square is not the same as the to square.
+                capt_pos ^= 0x10;
+            } else if(mode <= PROMO_MODE_Q) {
+                // Promotion - replace pawn with promo piece kind
+                const int promo_kind = mode - PROMO_MODE;
+                delta = full_piece_pos_val(color, promo_kind, to) - full_piece_pos_val(color, W_PAWN_KIND, to);
+            } else {
+                // Castling - the actual move is the king move, so calculate the delta.
+                const int rook_from = mode - CAS_MODE + from;
+                const int rook_to = (from+to) >> 1;
+                delta = full_piece_pos_val(color, ROOK_KIND, rook_to) - full_piece_pos_val(color, ROOK_KIND, rook_from);
+            }
+        }
+
+        const int piece = board[from]; const int kind = piece_to_kind[piece];
+        delta = delta - full_piece_pos_val(color, kind, from) + full_piece_pos_val(color, kind, to);
+
+        if(!is_empty(capt_pos)) {
+            const int capt_piece = board[capt_pos]; const int capt_kind = piece_to_kind[capt_piece];
+            delta += full_piece_pos_val(other_color(color), capt_kind, capt_pos); // in our favour
+        }
+
+        return delta;
+
+    }
+
     struct NegamaxResult {
         int eval;
         Move best_move;
@@ -1152,6 +1187,42 @@ char Keys[1040];
         }
     };
     
+    // Mini-max
+    // @return eval
+    NegamaxResult negamax(const int color, const Move last_move, const int depth) {
+        // Save state.
+        const int orig_msp = move_stack.msp;
+
+        CheckData check_data;
+        gen_moves(color, last_move, check_data);
+
+        // If there are no valid moves, then this is checkmate or stalemate - prefer shallower checkmates.
+        if(move_stack.msp == orig_msp) {
+            return NegamaxResult(check_data.in_check ? -60000 - depth/*checkmate*/ : 0);
+        }
+
+        // No quiescence for now...
+        NegamaxResult result(-1000000);
+        const int child_color = other_color(color);
+
+        for(int i = orig_msp; i < move_stack.msp; i++) {
+            const Move move = move_stack.at(i);
+            const MoveUndoInfo undo_info = make_full_move(color, move);
+
+            NegamaxResult child_result = depth <= 1
+                ? NegamaxResult(full_eval(child_color), move)
+                : negamax(child_color, move, depth-1);
+
+            result.merge(child_result, move);
+
+            unmake_full_move(color, move, undo_info);
+        }
+
+        move_stack.pop_to(orig_msp); // discard moves
+
+        return result;
+    }
+
     // Mini-max by effort
     // @return eval
     NegamaxResult negamax2(const int color, const Move last_move, const double effort, const int d) {
@@ -1181,42 +1252,6 @@ char Keys[1040];
             NegamaxResult child_result = effort_per_child <= n_moves // use n_moves as an indicator of likely minimum child effort
                 ? NegamaxResult(full_eval(child_color), move)
                 : negamax2(child_color, move, effort_per_child, d+1);
-
-            result.merge(child_result, move);
-
-            unmake_full_move(color, move, undo_info);
-        }
-
-        move_stack.pop_to(orig_msp); // discard moves
-
-        return result;
-    }
-
-    // Mini-max
-    // @return eval
-    NegamaxResult negamax(const int color, const Move last_move, const int depth) {
-        // Save state.
-        const int orig_msp = move_stack.msp;
-
-        CheckData check_data;
-        gen_moves(color, last_move, check_data);
-
-        // If there are no valid moves, then this is checkmate or stalemate - prefer shallower checkmates.
-        if(move_stack.msp == orig_msp) {
-            return NegamaxResult(check_data.in_check ? -60000 - depth/*checkmate*/ : 0);
-        }
-
-        // No quiescence for now...
-        NegamaxResult result(-1000000);
-        const int child_color = other_color(color);
-
-        for(int i = orig_msp; i < move_stack.msp; i++) {
-            const Move move = move_stack.at(i);
-            const MoveUndoInfo undo_info = make_full_move(color, move);
-
-            NegamaxResult child_result = depth <= 1
-                ? NegamaxResult(full_eval(child_color), move)
-                : negamax(child_color, move, depth-1);
 
             result.merge(child_result, move);
 
@@ -1351,7 +1386,7 @@ char Keys[1040];
             const Move move = move_stack.at(i);
             const int from = move.from(), to = move.to(), mode = move.mode();
 
-            int piece = board[from]; int orig_piece = piece;
+            int piece = board[from]; const int orig_piece = piece;
             int capt_pos = to;
 
             path[d] = move_stack.at(i);
@@ -1547,24 +1582,23 @@ char Keys[1040];
 
     int pawns_eval(const int color) const {
         int eval = 0;
-        FOREACH_PAWN(color, { eval += kind_to_val(W_PAWN_KIND) + kind_pos_to_val(color, W_PAWN_KIND, pawn_pos); /*printf("               after pawn pos %02x, eval -> %3d\n", pawn_pos, eval);*/ });
+        FOREACH_PAWN(color, { eval += full_piece_pos_val(color, W_PAWN_KIND, pawn_pos); });
         return eval;
     }
 
     int knights_eval(const int color) const {
         int eval = 0;
-        //printf("              (starting FOREACH_KNIGHT - kind_to_val(KNIGHT_KIND) is %d)\n", kind_to_val(KNIGHT_KIND));
-        FOREACH_KNIGHT(color, { eval += kind_to_val(KNIGHT_KIND) + kind_pos_to_val(color, KNIGHT_KIND, knight_pos); /*printf("               after knight pos %02x, eval -> %3d\n", knight_pos, eval);*/});
+        FOREACH_KNIGHT(color, { eval += full_piece_pos_val(color, KNIGHT_KIND, knight_pos); /*printf("               after knight pos %02x, eval -> %3d\n", knight_pos, eval);*/});
         return eval;
     }
 
     int sliders_eval(const int color) const {
         int eval = 0;
-        FOREACH_SLIDER(color, { const int kind = piece_to_kind[slider_piece]; eval += kind_to_val(kind) + kind_pos_to_val(color, kind, slider_pos); });
+        FOREACH_SLIDER(color, { const int kind = piece_to_kind[slider_piece]; eval += full_piece_pos_val(color, kind, slider_pos); });
         return eval;
     }
 
-    int king_eval(const int color) const { return kind_to_val(KING_KIND) + kind_pos_to_val(color, KING_KIND, king_pos(color)); }
+    int king_eval(const int color) const { return full_piece_pos_val(color, KING_KIND, king_pos(color)); }
 
     // Eval of this color's pieces only.
     int half_eval(const int color) const {
