@@ -1360,7 +1360,7 @@ char Keys[1040];
 
     // Mini-max by effort
     // @return eval
-    NegamaxResult negamax21(const int color, const Move last_move, const double effort, const int d) {
+    NegamaxResult negamax21x(const int color, const Move last_move, const int eval, const double effort, const int d) {
         // Save state.
         const int orig_msp = move_stack.msp;
 
@@ -1378,19 +1378,25 @@ char Keys[1040];
 
         // No quiescence for now...
         NegamaxResult result(-1000000);
-        const int child_color = other_color(color);
 
-        for(int i = orig_msp; i < move_stack.msp; i++) {
-            const Move move = move_stack.moves[i];
-            const MoveUndoInfo undo_info = make_full_move(color, move);
+        if(effort_per_child <= n_moves) { // use n_moves as an indicator of likely minimum child effortdepth <= 1
+            for(int i = orig_msp; i < move_stack.msp; i++) {
+                result.merge(NegamaxResult(-eval - move_stack.eval_deltas[i]), move_stack.moves[i]);
+            }
+        } else {
 
-            NegamaxResult child_result = effort_per_child <= n_moves // use n_moves as an indicator of likely minimum child effort
-                ? NegamaxResult(full_eval(child_color), move)
-                : negamax2(child_color, move, effort_per_child, d+1);
+            const int child_color = other_color(color);
 
-            result.merge(child_result, move);
+            for(int i = orig_msp; i < move_stack.msp; i++) {
+                const Move move = move_stack.moves[i];
+                const MoveUndoInfo undo_info = make_full_move(color, move);
 
-            unmake_full_move(color, move, undo_info);
+                NegamaxResult child_result = negamax21x(child_color, move, -eval - move_stack.eval_deltas[i], effort_per_child, d+1);
+
+                result.merge(child_result, move);
+
+                unmake_full_move(color, move, undo_info);
+            }
         }
 
         move_stack.pop_to(orig_msp); // discard moves
@@ -1668,8 +1674,9 @@ char Keys[1040];
             clock_t t = clock();
             
             //NegamaxResult result = negamax(color, last_move, depth);
-            NegamaxResult result = negamax1(color, last_move, full_eval(color), depth);
+            //NegamaxResult result = negamax1(color, last_move, full_eval(color), depth);
             //NegamaxResult result = negamax2(color, last_move, depth*1000000.0, 0/*root*/); // Note - depth here is really effort!
+            NegamaxResult result = negamax21x(color, last_move, full_eval(color), depth*1000000.0, 0/*root*/); // Note - depth here is really effort!
             //Move best_move;
             //NegamabResult result = negamab(color, last_move, depth, -100000, 100000);
             //NegamabResult result = negamab2(color, last_move, depth*1000000.0, 0/*root*/, -100000, 100000); // Note - depth here is really effort!
