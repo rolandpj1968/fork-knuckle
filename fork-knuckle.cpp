@@ -1211,11 +1211,16 @@ char Keys[1040];
             const Move move = move_stack.at(i);
             const MoveUndoInfo undo_info = make_full_move(color, move);
 
-            int child_eval = depth <= 1
-                ? full_eval(color)
-                : - negamax(other_color(color), move, depth-1).eval;
+            NegamaxResult child_result = depth <= 1
+                ? NegamaxResult(-full_eval(color), move)
+                : negamax(other_color(color), move, depth-1);
 
-            if(result.eval < child_eval) { result = NegamaxResult(child_eval, move); }
+            result.merge(child_result, move);
+            // int child_eval = depth <= 1
+            //     ? full_eval(color)
+            //     : - negamax(other_color(color), move, depth-1).eval;
+
+            // if(result.eval < child_eval) { result = NegamaxResult(child_eval, move); }
 
             unmake_full_move(color, move, undo_info);
         }
@@ -1404,8 +1409,8 @@ char Keys[1040];
             Move last_move(0 /*from*/, checker_pos(color) /*to*/, (epSqr^0x10));
             clock_t t = clock();
             
-            //NegamaxResult result = negamax(color, last_move, depth);
-            NegamaxResult result = negamax2(color, last_move, depth, 0/*root*/); // Note - depth here is really effort!
+            NegamaxResult result = negamax(color, last_move, depth);
+            //NegamaxResult result = negamax2(color, last_move, depth, 0/*root*/); // Note - depth here is really effort!
             //Move best_move;
             //NegamabResult result = negamab(color, last_move, depth, -100000, 100000);
             
