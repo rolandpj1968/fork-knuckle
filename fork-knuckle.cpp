@@ -1254,7 +1254,48 @@ char Keys[1040];
 
         if(depth <= 1) {
             for(int i = orig_msp; i < move_stack.msp; i++) {
-                result.merge(NegamaxResult(eval + move_stack.eval_deltas[i]), move_stack.moves[i]);
+                result.merge(NegamaxResult(-eval - move_stack.eval_deltas[i]), move_stack.moves[i]);
+            }
+        } else {
+            // No quiescence for now...
+            const int child_color = other_color(color);
+            
+            for(int i = orig_msp; i < move_stack.msp; i++) {
+                const Move move = move_stack.moves[i];
+                const MoveUndoInfo undo_info = make_full_move(color, move);
+                
+                NegamaxResult child_result = negamax1(child_color, move, -eval - move_stack.eval_deltas[i], depth-1);
+                
+                result.merge(child_result, move);
+                
+                unmake_full_move(color, move, undo_info);
+            }
+        }
+            
+        move_stack.pop_to(orig_msp); // discard moves
+
+        return result;
+    }
+
+    // Mini-max
+    // @return eval
+    NegamaxResult negamax2(const int color, const Move last_move, const int eval, const int depth) {
+        // Save state.
+        const int orig_msp = move_stack.msp;
+
+        CheckData check_data;
+        gen_moves_with_eval_deltas(color, last_move, check_data);
+
+        // If there are no valid moves, then this is checkmate or stalemate - prefer shallower checkmates.
+        if(move_stack.msp == orig_msp) {
+            return NegamaxResult(check_data.in_check ? -60000 - depth/*checkmate*/ : 0/*stalemate*/);
+        }
+
+        NegamaxResult result(-1000000);
+
+        if(depth <= 1) {
+            for(int i = orig_msp; i < move_stack.msp; i++) {
+                result.merge(NegamaxResult(-eval - move_stack.eval_deltas[i]), move_stack.moves[i]);
             }
         } else {
             // No quiescence for now...
@@ -1279,7 +1320,47 @@ char Keys[1040];
 
     // Mini-max by effort
     // @return eval
-    NegamaxResult negamax2(const int color, const Move last_move, const double effort, const int d) {
+    NegamaxResult negamax21(const int color, const Move last_move, const double effort, const int d) {
+        // Save state.
+        const int orig_msp = move_stack.msp;
+
+        CheckData check_data;
+        gen_moves(color, last_move, check_data);
+
+        // If there are no valid moves, then this is checkmate or stalemate - prefer shallower checkmates.
+        if(move_stack.msp == orig_msp) {
+            return NegamaxResult(check_data.in_check ? -60000 + d/*checkmate*/ : 0);
+        }
+
+        // Update effort - consider each generated move effort 1.0
+        int n_moves = move_stack.msp - orig_msp;
+        double effort_per_child = (effort - n_moves)/n_moves;
+
+        // No quiescence for now...
+        NegamaxResult result(-1000000);
+        const int child_color = other_color(color);
+
+        for(int i = orig_msp; i < move_stack.msp; i++) {
+            const Move move = move_stack.moves[i];
+            const MoveUndoInfo undo_info = make_full_move(color, move);
+
+            NegamaxResult child_result = effort_per_child <= n_moves // use n_moves as an indicator of likely minimum child effort
+                ? NegamaxResult(full_eval(child_color), move)
+                : negamax2(child_color, move, effort_per_child, d+1);
+
+            result.merge(child_result, move);
+
+            unmake_full_move(color, move, undo_info);
+        }
+
+        move_stack.pop_to(orig_msp); // discard moves
+
+        return result;
+    }
+
+    // Mini-max by effort
+    // @return eval
+    NegamaxResult negamax21(const int color, const Move last_move, const double effort, const int d) {
         // Save state.
         const int orig_msp = move_stack.msp;
 
@@ -1365,6 +1446,53 @@ char Keys[1040];
     // Alpha-beta by effort
     // @return eval
     NegamabResult negamab2(const int color, const Move last_move, const double effort, const int d, int alpha, int beta) {
+        // Save state.
+        int SavRights = CasRights;
+        const int orig_msp = move_stack.msp;
+
+        CheckData check_data;
+        gen_moves(color, last_move, check_data);
+
+        // If there are no valid moves, then this is checkmate or stalemate - prefer shallower checkmates.
+        if(move_stack.msp == orig_msp) {
+            return NegamaxResult(check_data.in_check ? -60000 + d/*checkmate*/ : 0);
+        }
+
+        // Update effort - consider each generated move effort 1.0
+        int n_moves = move_stack.msp - orig_msp;
+        double effort_per_child = (effort - n_moves)/n_moves;
+
+        // No quiescence for now...
+        NegamabResult result(-1000000);
+        const int child_color = other_color(color);
+
+        // Process captures before non-captures
+        for(int is_non_capture = 0; is_non_capture <= 1 && alpha <= beta; is_non_capture++) {
+            for(int i = orig_msp; i < move_stack.msp && alpha <= beta; i++) {
+                const Move move = move_stack.moves[i];
+                if(is_empty(move.to()) != is_non_capture) { continue; }
+
+                const MoveUndoInfo undo_info = make_full_move(color, move);
+
+                NegamaxResult child_result = effort_per_child <= n_moves // use n_moves as an indicator of likely minimum child effort
+                    ? NegamaxResult(full_eval(child_color), move)
+                    : negamab2(child_color, move, effort_per_child, d+1, -beta, -alpha);
+
+                result.merge(child_result, move);
+                if(alpha < -child_result.eval) { alpha = -child_result.eval; }
+
+                unmake_full_move(color, move, undo_info);
+            }
+        }
+
+        move_stack.pop_to(orig_msp); // Discard moves
+
+        return result;
+    }
+    
+    // Alpha-beta by effort
+    // @return eval
+    NegamabResult negamab21(const int color, const Move last_move, const int eval, const double effort, const int d, int alpha, int beta) {
         // Save state.
         int SavRights = CasRights;
         const int orig_msp = move_stack.msp;
