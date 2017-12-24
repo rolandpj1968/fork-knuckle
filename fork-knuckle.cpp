@@ -1134,10 +1134,11 @@ char Keys[1040];
     struct NegamaxResult {
         int eval;
         Move best_move;
+        uint64_t n_nodes;
         int max_depth;
 
-        NegamaxResult(int eval, Move best_move): eval(eval), best_move(best_move), max_depth(0) {}
-        NegamaxResult(int eval): eval(eval), best_move(), max_depth(0) {}
+        NegamaxResult(int eval, Move best_move): eval(eval), best_move(best_move), n_nodes(1), max_depth(0) {}
+        NegamaxResult(int eval): eval(eval), best_move(), n_nodes(1), max_depth(0) {}
 
         void merge(const NegamaxResult& child_result, Move move) {
             if(eval < -child_result.eval) {
@@ -1147,6 +1148,7 @@ char Keys[1040];
             if(max_depth < child_result.max_depth + 1) {
                 max_depth = child_result.max_depth + 1;
             }
+            n_nodes += child_result.n_nodes;
         }
     };
     
@@ -1170,17 +1172,17 @@ char Keys[1040];
 
         // No quiescence for now...
         NegamaxResult result(-1000000);
+        const int child_color = other_color(color);
 
         for(int i = orig_msp; i < move_stack.msp; i++) {
             const Move move = move_stack.at(i);
             const MoveUndoInfo undo_info = make_full_move(color, move);
 
             NegamaxResult child_result = effort_per_child <= n_moves // use n_moves as an indicator of likely minimum child effort
-                ? NegamaxResult(-full_eval(color), move)
-                : negamax2(other_color(color), move, effort_per_child, d+1).eval;
+                ? NegamaxResult(full_eval(child_color), move)
+                : negamax2(child_color, move, effort_per_child, d+1);
 
             result.merge(child_result, move);
-            //if(result.eval < child_eval) { result = NegamaxResult(child_eval, move); }
 
             unmake_full_move(color, move, undo_info);
         }
@@ -1206,21 +1208,17 @@ char Keys[1040];
 
         // No quiescence for now...
         NegamaxResult result(-1000000);
+        const int child_color = other_color(color);
 
         for(int i = orig_msp; i < move_stack.msp; i++) {
             const Move move = move_stack.at(i);
             const MoveUndoInfo undo_info = make_full_move(color, move);
 
             NegamaxResult child_result = depth <= 1
-                ? NegamaxResult(-full_eval(color), move)
-                : negamax(other_color(color), move, depth-1);
+                ? NegamaxResult(full_eval(child_color), move)
+                : negamax(child_color, move, depth-1);
 
             result.merge(child_result, move);
-            // int child_eval = depth <= 1
-            //     ? full_eval(color)
-            //     : - negamax(other_color(color), move, depth-1).eval;
-
-            // if(result.eval < child_eval) { result = NegamaxResult(child_eval, move); }
 
             unmake_full_move(color, move, undo_info);
         }
@@ -1242,8 +1240,6 @@ char Keys[1040];
         CheckData check_data;
         gen_moves(color, last_move, check_data);
 
-        //printf("     depth %d - %d moves in_check = %d\n", depth, move_stack.msp - orig_msp, check_data.in_check);
-
         // If there are no valid moves, then this is checkmate or stalemate - prefer shallower checkmates.
         if(move_stack.msp == orig_msp) {
             return NegamaxResult(check_data.in_check ? -60000 - depth/*checkmate*/ : 0);
@@ -1251,7 +1247,7 @@ char Keys[1040];
 
         // No quiescence for now...
         NegamabResult result(-1000000);
-        //int best_eval = -1000000;
+        const int child_color = other_color(color);
 
         // Process captures before non-captures
         for(int is_non_capture = 0; is_non_capture <= 1 && alpha <= beta; is_non_capture++) {
@@ -1261,15 +1257,60 @@ char Keys[1040];
 
                 const MoveUndoInfo undo_info = make_full_move(color, move);
 
-                int child_eval = depth <= 1
-                    ? full_eval(color)
-                    : - negamab(other_color(color), move, depth-1, -beta, -alpha).eval;
-                
-                if(result.eval < child_eval) {
-                    result = NegamaxResult(child_eval, move);
-                    if(alpha < child_eval) { alpha = child_eval; }
-                }
-            
+                NegamaxResult child_result = depth <= 1
+                    ? NegamaxResult(full_eval(child_color), move)
+                    : negamab(child_color, move, depth-1, -beta, -alpha);
+
+                result.merge(child_result, move);
+                if(alpha < -child_result.eval) { alpha = -child_result.eval; }
+
+                unmake_full_move(color, move, undo_info);
+            }
+        }
+
+        move_stack.pop_to(orig_msp); // Discard moves
+
+        return result;
+    }
+    
+    // Alpha-beta by effort
+    // @return eval
+    NegamabResult negamab2(const int color, const Move last_move, const double effort, const int d, int alpha, int beta) {
+        // Save state.
+        int SavRights = CasRights;
+        const int orig_msp = move_stack.msp;
+
+        CheckData check_data;
+        gen_moves(color, last_move, check_data);
+
+        // If there are no valid moves, then this is checkmate or stalemate - prefer shallower checkmates.
+        if(move_stack.msp == orig_msp) {
+            return NegamaxResult(check_data.in_check ? -60000 + d/*checkmate*/ : 0);
+        }
+
+        // Update effort - consider each generated move effort 1.0
+        int n_moves = move_stack.msp - orig_msp;
+        double effort_per_child = (effort - n_moves)/n_moves;
+
+        // No quiescence for now...
+        NegamabResult result(-1000000);
+        const int child_color = other_color(color);
+
+        // Process captures before non-captures
+        for(int is_non_capture = 0; is_non_capture <= 1 && alpha <= beta; is_non_capture++) {
+            for(int i = orig_msp; i < move_stack.msp && alpha <= beta; i++) {
+                const Move move = move_stack.at(i);
+                if(is_empty(move.to()) != is_non_capture) { continue; }
+
+                const MoveUndoInfo undo_info = make_full_move(color, move);
+
+                NegamaxResult child_result = effort_per_child <= n_moves // use n_moves as an indicator of likely minimum child effort
+                    ? NegamaxResult(full_eval(child_color), move)
+                    : negamab2(child_color, move, effort_per_child, d+1, -beta, -alpha);
+
+                result.merge(child_result, move);
+                if(alpha < -child_result.eval) { alpha = -child_result.eval; }
+
                 unmake_full_move(color, move, undo_info);
             }
         }
@@ -1409,10 +1450,11 @@ char Keys[1040];
             Move last_move(0 /*from*/, checker_pos(color) /*to*/, (epSqr^0x10));
             clock_t t = clock();
             
-            NegamaxResult result = negamax(color, last_move, depth);
-            //NegamaxResult result = negamax2(color, last_move, depth, 0/*root*/); // Note - depth here is really effort!
+            //NegamaxResult result = negamax(color, last_move, depth);
+            //NegamaxResult result = negamax2(color, last_move, depth*1000000.0, 0/*root*/); // Note - depth here is really effort!
             //Move best_move;
             //NegamabResult result = negamab(color, last_move, depth, -100000, 100000);
+            NegamabResult result = negamab2(color, last_move, depth*1000000.0, 0/*root*/, -100000, 100000); // Note - depth here is really effort!
             
             // No legal move - checkmate or stalemate
             if(result.best_move.is_empty()) {
@@ -1424,7 +1466,7 @@ char Keys[1040];
             
             const Move best_move = result.best_move;
             char from_str[3]; pos_str(best_move.from(), from_str); char to_str[3]; pos_str(best_move.to(), to_str);
-            printf("Best move %s %s: %d cp (depth %d, %6.3f sec)\n\n", from_str, to_str, result.eval, result.max_depth, t*(1./CLOCKS_PER_SEC));
+            printf("Best move %s %s: %d cp (%ld nodes depth %d, %6.3f sec)\n\n", from_str, to_str, result.eval, result.n_nodes, result.max_depth, t*(1./CLOCKS_PER_SEC));
 
             // Perform move and swap color.
             const int from = best_move.from(), to = best_move.to(), mode = best_move.mode();
