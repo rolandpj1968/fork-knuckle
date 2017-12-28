@@ -1320,7 +1320,7 @@ char Keys[1040];
 
     // Mini-max by effort
     // @return eval
-    NegamaxResult negamax21x(const int color, const Move last_move, const int eval, const double effort, const int d) {
+    NegamaxResult negamax21(const int color, const Move last_move, const int eval, const double effort, const int d) {
         // Save state.
         const int orig_msp = move_stack.msp;
 
@@ -1350,7 +1350,7 @@ char Keys[1040];
                 const Move move = move_stack.moves[i];
                 const MoveUndoInfo undo_info = make_full_move(color, move);
 
-                NegamaxResult child_result = negamax21x(child_color, move, -eval - move_stack.eval_deltas[i], effort_per_child, d+1);
+                NegamaxResult child_result = negamax21(child_color, move, -eval - move_stack.eval_deltas[i], effort_per_child, d+1);
 
                 result.merge(child_result, move);
 
@@ -1635,7 +1635,7 @@ char Keys[1040];
             //NegamaxResult result = negamax(color, last_move, depth);
             //NegamaxResult result = negamax1(color, last_move, full_eval(color), depth);
             //NegamaxResult result = negamax2(color, last_move, depth*1000000.0, 0/*root*/); // Note - depth here is really effort!
-            NegamaxResult result = negamax21x(color, last_move, full_eval(color), depth*1000000.0, 0/*root*/); // Note - depth here is really effort!
+            NegamaxResult result = negamax21(color, last_move, full_eval(color), depth*1000000.0, 0/*root*/); // Note - depth here is really effort!
             //Move best_move;
             //NegamabResult result = negamab(color, last_move, depth, -100000, 100000);
             //NegamabResult result = negamab2(color, last_move, depth*1000000.0, 0/*root*/, -100000, 100000); // Note - depth here is really effort!
