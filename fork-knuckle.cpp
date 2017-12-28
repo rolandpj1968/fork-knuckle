@@ -1320,52 +1320,12 @@ char Keys[1040];
 
     // Mini-max by effort
     // @return eval
-    NegamaxResult negamax21(const int color, const Move last_move, const double effort, const int d) {
-        // Save state.
-        const int orig_msp = move_stack.msp;
-
-        CheckData check_data;
-        gen_moves(color, last_move, check_data);
-
-        // If there are no valid moves, then this is checkmate or stalemate - prefer shallower checkmates.
-        if(move_stack.msp == orig_msp) {
-            return NegamaxResult(check_data.in_check ? -60000 + d/*checkmate*/ : 0);
-        }
-
-        // Update effort - consider each generated move effort 1.0
-        int n_moves = move_stack.msp - orig_msp;
-        double effort_per_child = (effort - n_moves)/n_moves;
-
-        // No quiescence for now...
-        NegamaxResult result(-1000000);
-        const int child_color = other_color(color);
-
-        for(int i = orig_msp; i < move_stack.msp; i++) {
-            const Move move = move_stack.moves[i];
-            const MoveUndoInfo undo_info = make_full_move(color, move);
-
-            NegamaxResult child_result = effort_per_child <= n_moves // use n_moves as an indicator of likely minimum child effort
-                ? NegamaxResult(full_eval(child_color), move)
-                : negamax2(child_color, move, effort_per_child, d+1);
-
-            result.merge(child_result, move);
-
-            unmake_full_move(color, move, undo_info);
-        }
-
-        move_stack.pop_to(orig_msp); // discard moves
-
-        return result;
-    }
-
-    // Mini-max by effort
-    // @return eval
     NegamaxResult negamax21x(const int color, const Move last_move, const int eval, const double effort, const int d) {
         // Save state.
         const int orig_msp = move_stack.msp;
 
         CheckData check_data;
-        gen_moves(color, last_move, check_data);
+        gen_moves_with_eval_deltas(color, last_move, check_data);
 
         // If there are no valid moves, then this is checkmate or stalemate - prefer shallower checkmates.
         if(move_stack.msp == orig_msp) {
@@ -1384,7 +1344,6 @@ char Keys[1040];
                 result.merge(NegamaxResult(-eval - move_stack.eval_deltas[i]), move_stack.moves[i]);
             }
         } else {
-
             const int child_color = other_color(color);
 
             for(int i = orig_msp; i < move_stack.msp; i++) {
@@ -1691,7 +1650,7 @@ char Keys[1040];
             
             const Move best_move = result.best_move;
             char from_str[3]; pos_str(best_move.from(), from_str); char to_str[3]; pos_str(best_move.to(), to_str);
-            printf("Best move %s %s: %d cp (%ld nodes depth %d, %6.3f sec)\n\n", from_str, to_str, result.eval, result.n_nodes, result.max_depth, t*(1./CLOCKS_PER_SEC));
+            printf("Best move %s %s: %d cp (%ld nodes depth %d, %6.3f sec)\n\n", from_str, to_str, (color == WHITE ? result.eval : -result.eval), result.n_nodes, result.max_depth, t*(1./CLOCKS_PER_SEC));
 
             // Perform move and swap color.
             const int from = best_move.from(), to = best_move.to(), mode = best_move.mode();
