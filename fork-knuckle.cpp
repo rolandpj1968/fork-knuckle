@@ -144,11 +144,17 @@ char Keys[1040];
     //FILE *f;
     clock_t ttt[30];
 
+    static bool is_offboard(const int pos) {
+        return (pos-0x22)&0x88;
+    }
+
     /**
      * Make an empty board surrounded by guard band of uncapturable pieces.
      */
-    void board_init(unsigned char *b) {
-        for(int i= -1; i<0xBC; i++) b[i] = (i-0x22)&0x88 ? GUARD : DUMMY;
+    void board_init() {
+        for(int pos = -1; pos < 0xBC; pos++) {
+            board[pos] = is_offboard(pos) ? GUARD : DUMMY;
+        }
     }
 
     /**
@@ -233,11 +239,51 @@ char Keys[1040];
         }
     }
 
+    static const bool DO_SANITY_CHECK_BOARD = false;
+
+    bool SANITY_CHECK_BOARD(const bool bail_on_fail = true) const {
+        return DO_SANITY_CHECK_BOARD ? sanity_check_board(bail_on_fail) : true;
+    }
+
+    //bool sanity_check_squares
+
+    /**
+     * Check the board for consistency - debug purposes only.
+     */
+    bool sanity_check_board(const bool bail_on_fail) const {
+        bool ok = true;
+        for(int pos = -1; pos < 0xBC; pos++) {
+            const int piece = board[pos];
+            if(is_offboard(pos)) {
+                if(piece != GUARD) {
+                    printf("              !! board[0x%02x] = 0x%02x expecting GUARD 0x%02x\n", pos, piece, GUARD);
+                    ok = false;
+                }
+            } else {
+                if(!is_empty(pos)) {
+                    const int pos2 = piece_to_pos[piece];
+                    if(pos != pos2) {
+                        printf("              !! board[0x%02x] = 0x%02x but piece_to_pos is 0x%02x\n", pos, piece, pos2);
+                        ok = false;
+                    }
+                }
+            }
+        }
+        
+        if(!ok && bail_on_fail) {
+            printf("Board consistency check failed - bailing...\n");
+            exit(1);
+        }
+
+        return ok;
+    }
+
 
     /**
      * Print board of n x n, in hex (bin=1) or ascii.
      */
-    void pboard(unsigned char *b, int n, int bin) {
+    void pboard(bool bin = false) const {
+        unsigned char *b = board; int n = 12;
         static const char* asc = ".+pnbrqkxxxxxxxx.P*NBRQKXXXXXXXX";
 
         for(int i=n-1; i>=0; i--) {
@@ -690,6 +736,7 @@ char Keys[1040];
     void gen_ep_captures(const int color, const int ep_pos, const CheckData& check_data) {
         //printf("RPJ gen_ep_captures - ep_pos is %02x\n", ep_pos-0x22);
         if(!check_data.in_check || check_data.checker_pos == ep_pos) {
+            if(DEPTH_FOR_DEBUG == 0) { printf("Generating ep captures... ep_pos = %02x raw - i.e. %02x\n", ep_pos, ep_pos-0x22); }
             int to_pos = ep_pos ^ FW; // Just a trick to give 3rd or 6th rank.
             if(is_pawn(color, ep_pos+RT) && !is_pinned(ep_pos+RT) && !is_ep_into_check(color, ep_pos, RT)) { push_move(ep_pos+RT, to_pos, EP_MODE); }
             if(is_pawn(color, ep_pos+LT) && !is_pinned(ep_pos+LT) && !is_ep_into_check(color, ep_pos, LT)) { push_move(ep_pos+LT, to_pos, EP_MODE); }
@@ -738,13 +785,19 @@ char Keys[1040];
             });
     }
 
+    int DEPTH_FOR_DEBUG = 0;
+
     // All pawn moves.
     void gen_pawn_moves(const int color) {
-        int fw = forward_dir(color);   // forward step
+        const int fw = forward_dir(color);   // forward step
+
+        if(DEPTH_FOR_DEBUG == 0) { printf("Generating pawn moves for root...\n"); }
 
         FOREACH_PAWN(color, {
+                if(DEPTH_FOR_DEBUG == 0 && pawn_pos == 0x27+0x22 && is_capturable(color, pawn_pos+fw+LT)) {
+                    printf("                            !!!!!! we got 27 to 36 - color is %02x piece is %02x DUMMY is %02x\n", color, board[pawn_pos+fw+LT], DUMMY);
+                }
                 // Capture moves.
-                int pawn_pos_fw = pawn_pos + fw;
                 if(is_capturable(color, pawn_pos+fw+LT)) { push_pawn_move(color, pawn_pos, pawn_pos+fw+LT); }
                 if(is_capturable(color, pawn_pos+fw+RT)) { push_pawn_move(color, pawn_pos, pawn_pos+fw+RT); }
                 
@@ -819,16 +872,17 @@ char Keys[1040];
     }
 
     // Generate piece moves when not in contact check.
-    void gen_piece_moves(const int color, int first_move, CheckData& check_data) {
+    void gen_piece_moves(const int color, int orig_msp, CheckData& check_data) {
         // Pawns
         gen_pawn_moves(color);
+        if(DEPTH_FOR_DEBUG == 0) { printf("Generating moves for root - after pawn moves - %d moves...\n", (move_stack.msp - orig_msp)); }
         // Knights
         gen_knight_moves(color);
         // Sliders
         gen_slider_moves(color);
         
         // Remove illegal moves (that don't solve distant check).
-        remove_illegal_moves(color, first_move, check_data);
+        remove_illegal_moves(color, orig_msp, check_data);
     }
 
     // All king moves - note these are pseudo-moves. Not sure why we don't check for capturable here?
@@ -872,11 +926,15 @@ char Keys[1040];
         
     // Legal move generator.
     void gen_moves(const int color, Move last_move, CheckData& check_data) {
-        int pstack[12], ppos[12], psp=0, orig_msp = move_stack.msp;
+        int pstack[12], ppos[12], psp = 0, orig_msp = move_stack.msp;
         int ep_pos = last_move.mode();
 
+        if(DEPTH_FOR_DEBUG == 0) { printf("Generating moves for root - last move %02x to %02x mode %02x...\n", last_move.from()-0x22, last_move.to()-0x22, last_move.mode()); }
+        
         // Pinned-piece moves and non-contact check detection.
         gen_pincheck_moves(color, check_data, pstack, ppos, psp);
+
+        if(DEPTH_FOR_DEBUG == 0) { printf("Generating moves for root - after pincheck - %d moves...\n", (move_stack.msp - orig_msp)); }
 
         // Detect contact checks.
         get_contact_check(color, last_move, check_data);
@@ -884,25 +942,35 @@ char Keys[1040];
         // Remove moves with pinned pieces if in check.
         if(check_data.in_check) { move_stack.pop_to(orig_msp); }
         
+        if(DEPTH_FOR_DEBUG == 0) { printf("Generating moves for root - after in_check check - %d moves...\n", (move_stack.msp - orig_msp)); }
+
         // If we're not in double check, then generate moves for all pieces, otherwise only king moves are allowed
         if(!check_data.in_double_check()) {
             // Generate castlings.
             gen_castling_moves(color, check_data);
 
+            if(DEPTH_FOR_DEBUG == 0) { printf("Generating moves for root - after castling - %d moves...\n", (move_stack.msp - orig_msp)); }
+
             // Generate en-passant captures (at most two).
             gen_ep_captures(color, ep_pos, check_data);
         
+            if(DEPTH_FOR_DEBUG == 0) { printf("Generating moves for root - after en-passant - %d moves...\n", (move_stack.msp - orig_msp)); }
+            
             // On contact check only King retreat or capture helps.
             // Use a specialized recapture generator in that case.
             if(check_data.in_contact_check()) {
                 gen_piece_moves_in_contact_check(color, check_data.checker_pos);
+                if(DEPTH_FOR_DEBUG == 0) { printf("Generating moves for root - after piece moves in check - %d moves...\n", (move_stack.msp - orig_msp)); }
             } else {
                 gen_piece_moves(color, orig_msp, check_data);
+                if(DEPTH_FOR_DEBUG == 0) { printf("Generating moves for root - after piece moves - %d moves...\n", (move_stack.msp - orig_msp)); }
             }
         }
         
         // King moves (always generated).
         gen_king_moves(color, check_data);
+
+        if(DEPTH_FOR_DEBUG == 0) { printf("Generating moves for root - after king moves - %d moves...\n", (move_stack.msp - orig_msp)); }
 
         // Put pieces that were parked onto pin stack back in lists.
         restore_pinned_pieces(pstack, ppos, psp);
@@ -1321,11 +1389,16 @@ char Keys[1040];
     // Mini-max by effort
     // @return eval
     NegamaxResult negamax21(const int color, const Move last_move, const int eval, const double effort, const int d) {
+        SANITY_CHECK_BOARD();
+        
         // Save state.
         const int orig_msp = move_stack.msp;
 
+DEPTH_FOR_DEBUG = d;
         CheckData check_data;
         gen_moves_with_eval_deltas(color, last_move, check_data);
+
+        SANITY_CHECK_BOARD();
 
         // If there are no valid moves, then this is checkmate or stalemate - prefer shallower checkmates.
         if(move_stack.msp == orig_msp) {
@@ -1350,15 +1423,35 @@ char Keys[1040];
                 const Move move = move_stack.moves[i];
                 const MoveUndoInfo undo_info = make_full_move(color, move);
 
+                if(!SANITY_CHECK_BOARD(false)) {
+                    printf("\n");
+                    pboard();
+                    printf("\n - after making move from 0x%02x to 0x%02x mode 0x%02x.\n", move.from(), move.to(), move.mode());
+                    exit(1);
+                }
+
                 NegamaxResult child_result = negamax21(child_color, move, -eval - move_stack.eval_deltas[i], effort_per_child, d+1);
 
                 result.merge(child_result, move);
 
+                if(d == 0) {
+                    printf("                         after checking move from %02x to %02x d(eval) %d depth %d score %d, best so far is from %02x to %02x score %d\n", move.from()-0x22, move.to()-0x22, move_stack.eval_deltas[i], child_result.max_depth, child_result.eval, result.best_move.from()-0x22, result.best_move.to()-0x22, result.eval);
+                }
+
                 unmake_full_move(color, move, undo_info);
+
+                if(!SANITY_CHECK_BOARD(false)) {
+                    printf("\n");
+                    pboard();
+                    printf("\n - after undoing move from 0x%02x to 0x%02x mode 0x%02x.\n", move.from(), move.to(), move.mode());
+                    exit(1);
+                }
             }
         }
 
         move_stack.pop_to(orig_msp); // discard moves
+
+        SANITY_CHECK_BOARD();
 
         return result;
     }
@@ -1487,8 +1580,8 @@ char Keys[1040];
                 const MoveUndoInfo undo_info = make_full_move(color, move);
 
                 NegamaxResult child_result = effort_per_child <= n_moves // use n_moves as an indicator of likely minimum child effort
-                    ? NegamaxResult(full_eval(child_color), move)
-                    : negamab2(child_color, move, effort_per_child, d+1, -beta, -alpha);
+                    ? NegamaxResult(full_eval(child_color), move) // TODO
+                    : negamab21(child_color, move, -eval - move_stack.eval_deltas[i], effort_per_child, d+1, -beta, -alpha);
 
                 result.merge(child_result, move);
                 if(alpha < -child_result.eval) { alpha = -child_result.eval; }
@@ -1622,14 +1715,15 @@ char Keys[1040];
         return pgn;
     }
     
-    void play_negamax(int color, const int depth) {
+    void play_chess(int color, const int depth) {
         printf("ForkKnuckle Extreme Edition 0.0 - MiniMax depth %d, %s to play:\n\n", depth, (color == WHITE ? "white" : "black"));
-        pboard(board, 12, 0);
+        pboard();
         printf("\n");
 
+        Move last_move(0 /*from*/, checker_pos(color) /*to*/, (epSqr^0x10)); // ???
+            
         while(true) {
         
-            Move last_move(0 /*from*/, checker_pos(color) /*to*/, (epSqr^0x10));
             clock_t t = clock();
             
             //NegamaxResult result = negamax(color, last_move, depth);
@@ -1653,6 +1747,7 @@ char Keys[1040];
             printf("Best move %s %s: %d cp (%ld nodes depth %d, %6.3f sec)\n\n", from_str, to_str, (color == WHITE ? result.eval : -result.eval), result.n_nodes, result.max_depth, t*(1./CLOCKS_PER_SEC));
 
             // Perform move and swap color.
+            //make_full_move(color, best_move);
             const int from = best_move.from(), to = best_move.to(), mode = best_move.mode();
             int piece = board[from];
             int capt_pos = to;
@@ -1667,7 +1762,9 @@ char Keys[1040];
 
             color = other_color(color);
 
-            pboard(board, 12, 0);
+            last_move = best_move;
+
+            pboard();
             printf("\n");
 
             //break;
@@ -1718,13 +1815,13 @@ char Keys[1040];
         
         piece_init();
         
-        board_init(board);
+        board_init();
         
         int color = ReadFEN(FEN);
         
         setup();
         
-        pboard(board, 12, 0);
+        //pboard();
         
         return color;
     }
@@ -1796,7 +1893,7 @@ int main(int argc, char **argv)
         exit(0);
     }
 
-    p.play_negamax(color, depth);
+    p.play_chess(color, depth);
     //p.doit(depth, color);
 }
 
