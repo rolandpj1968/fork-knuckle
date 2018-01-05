@@ -118,15 +118,26 @@ char Keys[1040];
         bool is_empty() const { return move == 0; }
     };
 
+    struct MoveAndEval {
+        Move move;
+        int16_t deval; // Stored as a delta from pre-move eval
+        uint16_t flags;
+
+        MoveAndEval(): MoveAndEval(Move()) {}
+        MoveAndEval(const Move move): MoveAndEval(move, 0) {}
+        MoveAndEval(const Move move, int16_t deval): move(move), deval(deval) {}
+    };
+
     struct MoveStack {
-        Move moves[2048];
-        int16_t eval_deltas[2048];
+        MoveAndEval moves[2048];
+        // Move moves[2048];
+        // int16_t eval_deltas[2048];
         int msp = 0;
 
         void check(const int i) const { if(msp < 0 || 2048 <= msp) { printf("\nBOOOOOOOOM!\n\n"); exit(1); } }
         void check() const { check(msp); }
         
-        void push(const Move move) { moves[msp++] = move; }
+        void push(const MoveAndEval move) { moves[msp++] = move; }
 
         void swap_pop(const int i) { moves[i] = moves[--msp]; }
 
@@ -847,12 +858,13 @@ char Keys[1040];
     }
 
     // Remove moves that don't solve distant check by capturing checker or interposing on check ray.
-    void remove_illegal_moves(const int color, const int first_move, const CheckData& check_data) {
+    void remove_illegal_moves(const int color, const int orig_msp, const CheckData& check_data) {
         if(check_data.in_check) {
-            int king_pos = this->king_pos(color);    // King position.
-            for(int i = first_move; i < move_stack.msp; i++) {  // Go through all moves.
-                int to = move_stack.moves[i].to();
-                int mode = move_stack.moves[i].mode();
+            const int king_pos = this->king_pos(color);    // King position.
+            for(int i = orig_msp; i < move_stack.msp; i++) {  // Go through all moves.
+                const Move move = move_stack.moves[i].move;
+                const int to = move.to();
+                const int mode = move.mode();
                 
                 if(delta_vec[to-king_pos] != check_data.check_dir) {
                     move_stack.swap_pop(i--); // Note, re-orders list. - we could compact in order instead.
@@ -920,7 +932,7 @@ char Keys[1040];
         gen_moves(color, last_move, check_data);
 
         for(int i = orig_msp; i < move_stack.msp; i++) {
-            move_stack.eval_deltas[i] = eval_delta(color, move_stack.moves[i]);
+            move_stack.moves[i].deval = eval_delta(color, move_stack.moves[i].move);
         }
     }
         
@@ -1287,7 +1299,7 @@ char Keys[1040];
         const int child_color = other_color(color);
 
         for(int i = orig_msp; i < move_stack.msp; i++) {
-            const Move move = move_stack.moves[i];
+            const Move move = move_stack.moves[i].move;
             const MoveUndoInfo undo_info = make_full_move(color, move);
 
             NegamaxResult child_result = depth <= 1
@@ -1322,17 +1334,17 @@ char Keys[1040];
 
         if(depth <= 1) {
             for(int i = orig_msp; i < move_stack.msp; i++) {
-                result.merge(NegamaxResult(-eval - move_stack.eval_deltas[i]), move_stack.moves[i]);
+                result.merge(NegamaxResult(-eval - move_stack.moves[i].deval), move_stack.moves[i].move);
             }
         } else {
             // No quiescence for now...
             const int child_color = other_color(color);
             
             for(int i = orig_msp; i < move_stack.msp; i++) {
-                const Move move = move_stack.moves[i];
+                const Move move = move_stack.moves[i].move;
                 const MoveUndoInfo undo_info = make_full_move(color, move);
                 
-                NegamaxResult child_result = negamax1(child_color, move, -eval - move_stack.eval_deltas[i], depth-1);
+                NegamaxResult child_result = negamax1(child_color, move, -eval - move_stack.moves[i].deval, depth-1);
                 
                 result.merge(child_result, move);
                 
@@ -1363,17 +1375,17 @@ char Keys[1040];
 
         if(depth <= 1) {
             for(int i = orig_msp; i < move_stack.msp; i++) {
-                result.merge(NegamaxResult(-eval - move_stack.eval_deltas[i]), move_stack.moves[i]);
+                result.merge(NegamaxResult(-eval - move_stack.moves[i].deval), move_stack.moves[i].move);
             }
         } else {
             // No quiescence for now...
             const int child_color = other_color(color);
             
             for(int i = orig_msp; i < move_stack.msp; i++) {
-                const Move move = move_stack.moves[i];
+                const Move move = move_stack.moves[i].move;
                 const MoveUndoInfo undo_info = make_full_move(color, move);
                 
-                NegamaxResult child_result = negamax1(child_color, move, -eval - move_stack.eval_deltas[i], depth-1);
+                NegamaxResult child_result = negamax1(child_color, move, -eval - move_stack.moves[i].deval, depth-1);
                 
                 result.merge(child_result, move);
                 
@@ -1414,13 +1426,13 @@ DEPTH_FOR_DEBUG = d;
 
         if(effort_per_child <= n_moves) { // use n_moves as an indicator of likely minimum child effortdepth <= 1
             for(int i = orig_msp; i < move_stack.msp; i++) {
-                result.merge(NegamaxResult(-eval - move_stack.eval_deltas[i]), move_stack.moves[i]);
+                result.merge(NegamaxResult(-eval - move_stack.moves[i].deval), move_stack.moves[i].move);
             }
         } else {
             const int child_color = other_color(color);
 
             for(int i = orig_msp; i < move_stack.msp; i++) {
-                const Move move = move_stack.moves[i];
+                const Move move = move_stack.moves[i].move;
                 const MoveUndoInfo undo_info = make_full_move(color, move);
 
                 if(!SANITY_CHECK_BOARD(false)) {
@@ -1430,12 +1442,12 @@ DEPTH_FOR_DEBUG = d;
                     exit(1);
                 }
 
-                NegamaxResult child_result = negamax21(child_color, move, -eval - move_stack.eval_deltas[i], effort_per_child, d+1);
+                NegamaxResult child_result = negamax21(child_color, move, -eval - move_stack.moves[i].deval, effort_per_child, d+1);
 
                 result.merge(child_result, move);
 
                 if(d == 0) {
-                    printf("                         after checking move from %02x to %02x d(eval) %d depth %d score %d, best so far is from %02x to %02x score %d\n", move.from()-0x22, move.to()-0x22, move_stack.eval_deltas[i], child_result.max_depth, child_result.eval, result.best_move.from()-0x22, result.best_move.to()-0x22, result.eval);
+                    printf("                         after checking move from %02x to %02x d(eval) %d depth %d score %d, best so far is from %02x to %02x score %d\n", move.from()-0x22, move.to()-0x22, move_stack.moves[i].deval, child_result.max_depth, child_result.eval, result.best_move.from()-0x22, result.best_move.to()-0x22, result.eval);
                 }
 
                 unmake_full_move(color, move, undo_info);
@@ -1480,7 +1492,7 @@ DEPTH_FOR_DEBUG = d;
         // Process captures before non-captures
         for(int is_non_capture = 0; is_non_capture <= 1 && alpha <= beta; is_non_capture++) {
             for(int i = orig_msp; i < move_stack.msp && alpha <= beta; i++) {
-                const Move move = move_stack.moves[i];
+                const Move move = move_stack.moves[i].move;
                 if(is_empty(move.to()) != is_non_capture) { continue; }
 
                 const MoveUndoInfo undo_info = make_full_move(color, move);
@@ -1527,7 +1539,7 @@ DEPTH_FOR_DEBUG = d;
         // Process captures before non-captures
         for(int is_non_capture = 0; is_non_capture <= 1 && alpha <= beta; is_non_capture++) {
             for(int i = orig_msp; i < move_stack.msp && alpha <= beta; i++) {
-                const Move move = move_stack.moves[i];
+                const Move move = move_stack.moves[i].move;
                 if(is_empty(move.to()) != is_non_capture) { continue; }
 
                 const MoveUndoInfo undo_info = make_full_move(color, move);
@@ -1574,14 +1586,14 @@ DEPTH_FOR_DEBUG = d;
         // Process captures before non-captures
         for(int is_non_capture = 0; is_non_capture <= 1 && alpha <= beta; is_non_capture++) {
             for(int i = orig_msp; i < move_stack.msp && alpha <= beta; i++) {
-                const Move move = move_stack.moves[i];
+                const Move move = move_stack.moves[i].move;
                 if(is_empty(move.to()) != is_non_capture) { continue; }
 
                 const MoveUndoInfo undo_info = make_full_move(color, move);
 
                 NegamaxResult child_result = effort_per_child <= n_moves // use n_moves as an indicator of likely minimum child effort
                     ? NegamaxResult(full_eval(child_color), move) // TODO
-                    : negamab21(child_color, move, -eval - move_stack.eval_deltas[i], effort_per_child, d+1, -beta, -alpha);
+                    : negamab21(child_color, move, -eval - move_stack.moves[i].deval, effort_per_child, d+1, -beta, -alpha);
 
                 result.merge(child_result, move);
                 if(alpha < -child_result.eval) { alpha = -child_result.eval; }
@@ -1623,13 +1635,13 @@ DEPTH_FOR_DEBUG = d;
     
         for(int i = orig_msp; i < move_stack.msp; i++) {
             const uint64_t SavCnt = count;
-            const Move move = move_stack.moves[i];
+            const Move move = move_stack.moves[i].move;
             const int from = move.from(), to = move.to(), mode = move.mode();
 
             int piece = board[from]; const int orig_piece = piece;
             int capt_pos = to;
 
-            path[d] = move_stack.moves[i];
+            path[d] = move_stack.moves[i].move;
 
             int Index = 0;
 
@@ -1657,7 +1669,7 @@ DEPTH_FOR_DEBUG = d;
                     count++;
                 } else {
                     // Non-leaf node - recurse...
-                    perft(other_color(color), move_stack.moves[i], depth-1, d+1);
+                    perft(other_color(color), move_stack.moves[i].move, depth-1, d+1);
                     // Save the node and count in the hash.
                     hash_update(depth, Bucket, store, count - SavCnt);
                 }
@@ -1694,14 +1706,14 @@ DEPTH_FOR_DEBUG = d;
         return 0;
     }
 
-    char* pos_str(int pos, char* s) {
+    char* pos_str(const int pos, char* s) const {
         s[0] = "abcdefgh"[pos_file(pos)];
         s[1] = "12345678"[pos_rank(pos)];
         s[2] = 0;
         return s;
     }
 
-    char* move_pgn_str(int piece, int from, int to, int mode, bool is_capture, char* pgn) {
+    char* move_pgn_str(const int piece, const int from, const int to, const int mode, const bool is_capture, char* pgn) const {
         static const char* PGN_KIND[8] = { "", "", "", "N", "B", "R", "Q", "K" };
 
         if(mode == CAS_MODE_K) {
@@ -1709,8 +1721,11 @@ DEPTH_FOR_DEBUG = d;
         } else if(mode == CAS_MODE_Q) {
             sprintf(pgn, "O-O-O");
         } else {
+            const bool is_promo = EP_MODE < mode && mode <= PROMO_MODE_Q;
+            const char *const pgn_kind = is_promo ? "" : PGN_KIND[piece_to_kind[piece]];
+            const char *const promo_kind = is_promo ? PGN_KIND[piece_to_kind[piece]] : "";
             char from_str[3]; pos_str(from, from_str); char to_str[3]; pos_str(to, to_str);
-            sprintf(pgn, "%s%s%s%s", PGN_KIND[piece_to_kind[piece]], from_str, (is_capture ? "x" : ""), to_str);
+            sprintf(pgn, "%s%s%s%s%s", pgn_kind, from_str, (is_capture ? "x" : ""), to_str, promo_kind);
         }
         return pgn;
     }
