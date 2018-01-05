@@ -1,4 +1,5 @@
-#include <functional>
+#include <algorithm>
+//#include <functional>
 
 #include <time.h>
 #include <stdio.h>
@@ -10,7 +11,8 @@
 #include "fork-knuckle.hpp"
 #include "eval.hpp"
 
-using namespace SunfishEvalTables;
+//using namespace SunfishEvalTables;
+using namespace SimpleEvalTables;
 
 /***************************************************************************/
 /* Move generator based on separate Slider/Leaper/Pawn tables .            */
@@ -126,6 +128,8 @@ char Keys[1040];
         MoveAndEval(): MoveAndEval(Move()) {}
         MoveAndEval(const Move move): MoveAndEval(move, 0) {}
         MoveAndEval(const Move move, int16_t deval): move(move), deval(deval) {}
+
+        static bool byEvalGt(const MoveAndEval& me1, const MoveAndEval& me2) { return me1.deval > me2.deval; }
     };
 
     struct MoveStack {
@@ -1417,6 +1421,9 @@ DEPTH_FOR_DEBUG = d;
             return NegamaxResult(check_data.in_check ? -60000 + d/*checkmate*/ : 0);
         }
 
+        // Sort the moves - best-first
+        std::sort(move_stack.moves+orig_msp, move_stack.moves+move_stack.msp, MoveAndEval::byEvalGt); 
+
         // Update effort - consider each generated move effort 1.0
         int n_moves = move_stack.msp - orig_msp;
         double effort_per_child = (effort - n_moves)/n_moves;
@@ -1424,7 +1431,7 @@ DEPTH_FOR_DEBUG = d;
         // No quiescence for now...
         NegamaxResult result(-1000000);
 
-        if(effort_per_child <= n_moves) { // use n_moves as an indicator of likely minimum child effortdepth <= 1
+        if(effort_per_child < 1.0) {
             for(int i = orig_msp; i < move_stack.msp; i++) {
                 result.merge(NegamaxResult(-eval - move_stack.moves[i].deval), move_stack.moves[i].move);
             }
