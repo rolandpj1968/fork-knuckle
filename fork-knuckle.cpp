@@ -122,14 +122,15 @@ char Keys[1040];
 
     struct MoveAndEval {
         Move move;
-        int16_t deval; // Stored as a delta from pre-move eval
-        uint16_t flags;
+        int16_t deval;  // Stored as a delta from pre-move eval
+        int16_t deval2; // Eval from shallower search
 
         MoveAndEval(): MoveAndEval(Move()) {}
         MoveAndEval(const Move move): MoveAndEval(move, 0) {}
         MoveAndEval(const Move move, int16_t deval): move(move), deval(deval) {}
 
         static bool byEvalGt(const MoveAndEval& me1, const MoveAndEval& me2) { return me1.deval > me2.deval; }
+        static bool byEval2Gt(const MoveAndEval& me1, const MoveAndEval& me2) { return me1.deval2 > me2.deval2; }
     };
 
     struct MoveStack {
@@ -1246,6 +1247,7 @@ char Keys[1040];
 
         NegamaxResult(int eval, Move best_move): eval(eval), best_move(best_move), n_nodes(1), max_depth(0) {}
         NegamaxResult(int eval): eval(eval), best_move(), n_nodes(1), max_depth(0) {}
+        NegamaxResult(): NegamaxResult(0) {}
 
         void merge(const NegamaxResult& child_result, Move move) {
             if(eval < -child_result.eval) {
@@ -1630,7 +1632,42 @@ char Keys[1040];
             const int child_color = other_color(color);
 
             // Sort the moves - best-first
-            std::sort(move_stack.moves+orig_msp, move_stack.moves+move_stack.msp, MoveAndEval::byEvalGt); 
+            std::stable_sort(move_stack.moves+orig_msp, move_stack.moves+move_stack.msp, MoveAndEval::byEvalGt);
+
+            // Semi-iterative deepening - re-order according to a shallower search.
+            // if(1000000.0 < effort_per_child) {
+            //     // Use slightly wider alpha and beta
+            //     const int orig_alpha = alpha; alpha -=  0;
+            //     const int orig_beta  = beta;  beta  +=  0;
+            //     const double shallow_effort_per_child = std::max(sqrt(effort_per_child), effort_per_child/1000.0);
+            //     if(d == 0) { printf("                         shallow - %d moves, shallow effort per child %.2f\n", n_moves, shallow_effort_per_child); }
+            //     for(int i = orig_msp; i < move_stack.msp /*&& alpha <= beta*/; i++) {
+            //         const Move move = move_stack.moves[i].move;
+            //         const MoveUndoInfo undo_info = make_full_move(color, move);
+            //         const bool is_capture = undo_info.capt_piece != DUMMY;
+            
+            //         NegamaxResult shallow_child_result = negamab3(root_color, -qeval, child_color, move, is_capture, -eval, -eval - move_stack.moves[i].deval, shallow_effort_per_child, d+1, -beta, -alpha);
+                    
+            //         //result.merge(child_result, move);
+                    
+            //         if(alpha < -shallow_child_result.eval/*-50*/) { beta = std::min(beta, alpha + 50); alpha = -shallow_child_result.eval/*-50*/; }
+                    
+            //         if(d == 0) {
+            //             printf("                           shallow: move from %02x to %02x d(eval) %d depth %d score %d - d(eval) now %d\n", move.from()-0x22, move.to()-0x22, move_stack.moves[i].deval, shallow_child_result.max_depth, shallow_child_result.eval, -shallow_child_result.eval - eval);
+            //         }
+
+            //         // Update the score from the shallow search.
+            //         move_stack.moves[i].deval2 = -shallow_child_result.eval - eval;
+                    
+            //         unmake_full_move(color, move, undo_info);
+            //     }
+
+            //     alpha = orig_alpha;
+            //     beta = orig_beta;
+
+            //     // Resort the moves - best-first
+            //     std::stable_sort(move_stack.moves+orig_msp, move_stack.moves+move_stack.msp, MoveAndEval::byEval2Gt);
+            // }
 
             for(int i = orig_msp; i < move_stack.msp && alpha <= beta; i++) {
                 const Move move = move_stack.moves[i].move;
@@ -1644,7 +1681,92 @@ char Keys[1040];
                 if(alpha < -child_result.eval) { alpha = -child_result.eval; }
             
                 if(d == 0) {
-                    printf("                         after checking move from %02x to %02x d(eval) %d depth %d score %d, best so far is from %02x to %02x score %d\n", move.from()-0x22, move.to()-0x22, move_stack.moves[i].deval, child_result.max_depth, child_result.eval, result.best_move.from()-0x22, result.best_move.to()-0x22, result.eval);
+                    printf("                         after checking move from %02x to %02x d(eval) %d d(eval2) %d depth %d score %d, best so far is from %02x to %02x score %d\n", move.from()-0x22, move.to()-0x22, move_stack.moves[i].deval, move_stack.moves[i].deval2, child_result.max_depth, child_result.eval, result.best_move.from()-0x22, result.best_move.to()-0x22, result.eval);
+                }
+
+                unmake_full_move(color, move, undo_info);
+            }
+        }
+
+        move_stack.pop_to(orig_msp); // Discard moves
+
+        return result;
+    }
+    
+    // PVS by effort with reverse quiessence.
+    // @return eval
+    NegamabResult negapvs3(const int root_color, int qeval, const int color, const Move last_move, const bool last_is_capture, const int prev_eval, const int eval, const double effort, const int d, int alpha, int beta) {
+        // Update qeval if this is a quiet move
+        if(!last_is_capture) { qeval = color == root_color ? prev_eval : eval; }
+        
+        // Save state.
+        const int orig_msp = move_stack.msp;
+
+        CheckData check_data;
+        gen_moves_with_eval_deltas(color, last_move, check_data);
+
+        // If there are no valid moves, then this is checkmate or stalemate - prefer shallower checkmates.
+        if(move_stack.msp == orig_msp) {
+            return NegamaxResult(check_data.in_check ? -60000 + d/*checkmate*/ : 0/*stalemate*/);
+        }
+
+        // Update effort - consider each generated move effort 1.0
+        int n_moves = move_stack.msp - orig_msp;
+        double effort_per_child = (effort - n_moves)/n_moves;
+
+        if(d == 0) { printf("                       %d moves, effort per child %.2f\n", n_moves, effort_per_child); }
+        
+        // No quiescence for now...
+        NegamabResult result(-1000000);
+
+        if(effort_per_child < 1.0) {
+            // Passive quiessence
+            int min_eval = 1000000, max_eval = -1000000;
+            Move min_move, max_move;
+            for(int i = orig_msp; i < move_stack.msp; i++) {
+                const int move_eval = -eval - move_stack.moves[i].deval;
+                if(move_eval < min_eval) { min_eval = move_eval; min_move = move_stack.moves[i].move; }
+                if(max_eval < move_eval) { max_eval = move_eval; max_move = move_stack.moves[i].move; }
+                //result.merge(NegamaxResult(-eval - move_stack.moves[i].deval), move_stack.moves[i].move);
+            }
+
+            // Now return the quiessed eval, which is essentially the eval of the root_color at the last quiet move.
+            if(-qeval < min_eval) {
+                result.merge(NegamaxResult(min_eval), min_move);
+            } else if(max_eval < -qeval) {
+                result.merge(NegamaxResult(max_eval), max_move);
+            } else {
+                result.merge(NegamaxResult(-qeval), min_move/*arbitrary*/);
+            }
+        } else {
+            const int child_color = other_color(color);
+
+            // Sort the moves - best-first
+            std::stable_sort(move_stack.moves+orig_msp, move_stack.moves+move_stack.msp, MoveAndEval::byEvalGt);
+
+            for(int i = orig_msp; i < move_stack.msp && alpha <= beta; i++) {
+                const Move move = move_stack.moves[i].move;
+                const MoveUndoInfo undo_info = make_full_move(color, move);
+                const bool is_capture = undo_info.capt_piece != DUMMY;
+            
+                NegamaxResult child_result;
+                if(i == orig_msp) { // 1st child
+                    child_result = negapvs3(root_color, -qeval, child_color, move, is_capture, -eval, -eval - move_stack.moves[i].deval, effort_per_child, d+1, -beta, -alpha);
+                } else {
+                    child_result = negapvs3(root_color, -qeval, child_color, move, is_capture, -eval, -eval - move_stack.moves[i].deval, effort_per_child, d+1, -alpha, -alpha);
+                    if(alpha < -child_result.eval && -child_result.eval <= beta) {
+                        // Full re-search
+                        if(d == 0) { printf("                           ... full research...\n"); }
+                        child_result = negapvs3(root_color, -qeval, child_color, move, is_capture, -eval, -eval - move_stack.moves[i].deval, effort_per_child, d+1, -beta, child_result.eval);
+                    }
+                }
+            
+                result.merge(child_result, move);
+                
+                if(alpha < -child_result.eval) { alpha = -child_result.eval; }
+            
+                if(d == 0) {
+                    printf("                         after checking move from %02x to %02x d(eval) %d d(eval2) %d depth %d score %d, best so far is from %02x to %02x score %d\n", move.from()-0x22, move.to()-0x22, move_stack.moves[i].deval, move_stack.moves[i].deval2, child_result.max_depth, child_result.eval, result.best_move.from()-0x22, result.best_move.to()-0x22, result.eval);
                 }
 
                 unmake_full_move(color, move, undo_info);
@@ -1799,7 +1921,8 @@ char Keys[1040];
             //NegamabResult result = negamab2(color, last_move, depth*1000000.0, 0/*root*/, -100000, 100000); // Note - depth here is really effort!
             //NegamabResult result = negamab21(color, last_move, full_eval(color), depth*1000000.0, 0/*root*/, -100000, 100000); // Note - depth here is really effort!
             const int eval = full_eval(color);
-            NegamabResult result = negamab3(color, eval, color, last_move, false, eval, eval, depth*1000000.0, 0/*root*/, -100000, 100000); // Note - depth here is really effort!
+            //NegamabResult result = negamab3(color, eval, color, last_move, false, eval, eval, depth*1000000.0, 0/*root*/, -100000, 100000); // Note - depth here is really effort!
+            NegamabResult result = negapvs3(color, eval, color, last_move, false, eval, eval, depth*1000000.0, 0/*root*/, -100000, 100000); // Note - depth here is really effort!
             
             // No legal move - checkmate or stalemate
             if(result.best_move.is_empty()) {
