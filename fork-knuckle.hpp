@@ -105,4 +105,6 @@ static const int CAS_MODE     = 0xB0;
 static const int CAS_MODE_K   = CAS_MODE + RT+RT+RT;
 static const int CAS_MODE_Q   = CAS_MODE + LT+LT+LT+LT;
 
+static const int CHECKMATE_EVAL = 10000;
+
 #endif //def PERFTCPP_HPP

@@ -21,7 +21,7 @@ namespace SunfishEvalTables {
 
     static const int CHECK_VAL = 150;
 
-    static const uint16_t KIND_TO_VAL[8] = { 0, /*B_PAWN_KIND*/ 100, /*W_PAWN_KIND*/ 100, /*KNIGHT_KIND*/ 280, /*BISHOP_KIND*/ 320, /*ROOK_KIND*/ 479, /*QUEEN_KIND*/ 929, /*KING_KIND*/ 60000 };
+    static const uint16_t KIND_TO_VAL[8] = { 0, /*B_PAWN_KIND*/ 100, /*W_PAWN_KIND*/ 100, /*KNIGHT_KIND*/ 280, /*BISHOP_KIND*/ 320, /*ROOK_KIND*/ 479, /*QUEEN_KIND*/ 929, /*KING_KIND*/ 5000 };
 
     static int kind_to_val(const int kind) { return KIND_TO_VAL[kind]; }
 
@@ -116,7 +116,7 @@ namespace SimpleEvalTables {
 
     static const int CHECK_VAL = 150;
 
-    static const uint16_t KIND_TO_VAL[8] = { 0, /*B_PAWN_KIND*/ 100, /*W_PAWN_KIND*/ 100, /*KNIGHT_KIND*/ 320, /*BISHOP_KIND*/ 330, /*ROOK_KIND*/ 500, /*QUEEN_KIND*/ 900, /*KING_KIND*/ 20000 };
+    static const uint16_t KIND_TO_VAL[8] = { 0, /*B_PAWN_KIND*/ 100, /*W_PAWN_KIND*/ 100, /*KNIGHT_KIND*/ 320, /*BISHOP_KIND*/ 330, /*ROOK_KIND*/ 500, /*QUEEN_KIND*/ 900, /*KING_KIND*/ 4000 };
 
     static int kind_to_val(const int kind) { return KIND_TO_VAL[kind]; }
 

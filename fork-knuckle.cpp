@@ -1283,7 +1283,7 @@ char Keys[1040];
 
         // If there are no valid moves, then this is checkmate or stalemate - prefer shallower checkmates.
         if(move_stack.msp == orig_msp) {
-            return NegamaxResult(check_data.in_check ? -60000 - depth/*checkmate*/ : 0);
+            return NegamaxResult(check_data.in_check ? -CHECKMATE_EVAL - depth/*checkmate*/ : 0);
         }
 
         // No quiescence for now...
@@ -1319,7 +1319,7 @@ char Keys[1040];
 
         // If there are no valid moves, then this is checkmate or stalemate - prefer shallower checkmates.
         if(move_stack.msp == orig_msp) {
-            return NegamaxResult(check_data.in_check ? -60000 - depth/*checkmate*/ : 0/*stalemate*/);
+            return NegamaxResult(check_data.in_check ? -CHECKMATE_EVAL - depth/*checkmate*/ : 0/*stalemate*/);
         }
 
         NegamaxResult result(-1000000);
@@ -1360,7 +1360,7 @@ char Keys[1040];
 
         // If there are no valid moves, then this is checkmate or stalemate - prefer shallower checkmates.
         if(move_stack.msp == orig_msp) {
-            return NegamaxResult(check_data.in_check ? -60000 - depth/*checkmate*/ : 0/*stalemate*/);
+            return NegamaxResult(check_data.in_check ? -CHECKMATE_EVAL - depth/*checkmate*/ : 0/*stalemate*/);
         }
 
         NegamaxResult result(-1000000);
@@ -1401,7 +1401,7 @@ char Keys[1040];
 
         // If there are no valid moves, then this is checkmate or stalemate - prefer shallower checkmates.
         if(move_stack.msp == orig_msp) {
-            return NegamaxResult(check_data.in_check ? -60000 + d/*checkmate*/ : 0);
+            return NegamaxResult(check_data.in_check ? -CHECKMATE_EVAL + d/*checkmate*/ : 0);
         }
 
         // Update effort - consider each generated move effort 1.0
@@ -1459,7 +1459,7 @@ char Keys[1040];
 
         // If there are no valid moves, then this is checkmate or stalemate - prefer shallower checkmates.
         if(move_stack.msp == orig_msp) {
-            return NegamaxResult(check_data.in_check ? -60000 - depth/*checkmate*/ : 0);
+            return NegamaxResult(check_data.in_check ? -CHECKMATE_EVAL - depth/*checkmate*/ : 0);
         }
 
         // No quiescence for now...
@@ -1502,7 +1502,7 @@ char Keys[1040];
 
         // If there are no valid moves, then this is checkmate or stalemate - prefer shallower checkmates.
         if(move_stack.msp == orig_msp) {
-            return NegamaxResult(check_data.in_check ? -60000 + d/*checkmate*/ : 0);
+            return NegamaxResult(check_data.in_check ? -CHECKMATE_EVAL + d/*checkmate*/ : 0);
         }
 
         // Update effort - consider each generated move effort 1.0
@@ -1548,7 +1548,7 @@ char Keys[1040];
 
         // If there are no valid moves, then this is checkmate or stalemate - prefer shallower checkmates.
         if(move_stack.msp == orig_msp) {
-            return NegamaxResult(check_data.in_check ? -60000 + d/*checkmate*/ : 0/*stalemate*/);
+            return NegamaxResult(check_data.in_check ? -CHECKMATE_EVAL + d/*checkmate*/ : 0/*stalemate*/);
         }
 
         // Update effort - consider each generated move effort 1.0
@@ -1608,7 +1608,7 @@ char Keys[1040];
 
         // If there are no valid moves, then this is checkmate or stalemate - prefer shallower checkmates.
         if(move_stack.msp == orig_msp) {
-            return NegamaxResult(check_data.in_check ? -60000 + d/*checkmate*/ : 0/*stalemate*/);
+            return NegamaxResult(check_data.in_check ? -CHECKMATE_EVAL + d/*checkmate*/ : 0/*stalemate*/);
         }
 
         // Update effort - consider each generated move effort 1.0
@@ -1729,7 +1729,7 @@ char Keys[1040];
 
         // If there are no valid moves, then this is checkmate or stalemate - prefer shallower checkmates.
         if(move_stack.msp == orig_msp) {
-            return NegamaxResult(check_data.in_check ? -60000 + d/*checkmate*/ : 0/*stalemate*/);
+            return NegamaxResult(check_data.in_check ? -CHECKMATE_EVAL + d/*checkmate*/ : 0/*stalemate*/);
         }
 
         // Update effort - consider each generated move effort 1.0
@@ -1739,6 +1739,121 @@ char Keys[1040];
         if(d == 0) { printf("                       %d moves, effort per child %.2f\n", n_moves, effort_per_child); }
         
         // No quiescence for now...
+        NegamabResult result(-1000000);
+
+        if(effort_per_child < 1.0) {
+            // Passive quiessence
+            int min_eval = 1000000, max_eval = -1000000;
+            Move min_move, max_move;
+            for(int i = orig_msp; i < move_stack.msp; i++) {
+                const int move_eval = -eval - move_stack.moves[i].deval;
+                if(move_eval < min_eval) { min_eval = move_eval; min_move = move_stack.moves[i].move; }
+                if(max_eval < move_eval) { max_eval = move_eval; max_move = move_stack.moves[i].move; }
+                //result.merge(NegamaxResult(-eval - move_stack.moves[i].deval), move_stack.moves[i].move);
+            }
+
+            // Now return the quiessed eval, which is essentially the eval of the root_color at the last quiet move.
+            // TODO - Correct for color? Also we're basically wasting the move gen of this node if we always go back to qeval.
+            if(last_is_capture) {
+                // only consider quiet moves - TODO promo and check are not quiet
+                result.merge(NegamaxResult(-qeval), min_move/*arbitrary*/);
+            } else {
+                if(-qeval < min_eval) {
+                    result.merge(NegamaxResult(min_eval), min_move);
+                } else if(max_eval < -qeval) {
+                    result.merge(NegamaxResult(max_eval), max_move);
+                } else {
+                    result.merge(NegamaxResult(-qeval), min_move/*arbitrary*/);
+                }
+            }
+        } else {
+            const int child_color = other_color(color);
+
+            // Sort the moves - best-first
+            std::stable_sort(move_stack.moves+orig_msp, move_stack.moves+move_stack.msp, MoveAndEval::byEvalGt);
+
+            int n_moves = (move_stack.msp - orig_msp + 0)/1; // Only fraction of the moves.
+
+            for(int i = orig_msp; i < orig_msp + n_moves/*move_stack.msp*/ && alpha <= beta; i++) {
+                const Move move = move_stack.moves[i].move;
+                const MoveUndoInfo undo_info = make_full_move(color, move);
+                const bool is_capture = undo_info.capt_piece != DUMMY;
+
+                clock_t t = clock(); /*char move_str[8]; {
+                    move_pgn_str();
+                    }*/
+                NegamaxResult child_result;
+                if(i == orig_msp) { // 1st child
+                    // if(d == 0) {
+                    //     // let's play - scout around the current eval...
+                    //     clock_t t2 = clock();
+                    //     int move_eval = -eval - move_stack.moves[i].deval;
+                    //     NegamaxResult child_result = negapvs3(root_color, -qeval, child_color, move, is_capture, -eval, move_eval, effort_per_child, d+1, -31, -31/*move_eval, move_eval*/);
+                    //     printf("                         scouted move %02x from %02x %s %02x d(eval) %d d(eval2) %d depth %d score %d (%ld nodes, %6.3f sec)\n", board[move.to()], move.from()-0x22, (is_capture ? "x" : "-"), move.to()-0x22, move_stack.moves[i].deval, move_stack.moves[i].deval2, child_result.max_depth, child_result.eval, child_result.n_nodes, (clock()-t2)*(1.0/CLOCKS_PER_SEC));
+                    // }
+                    t = clock();
+                    child_result = negapvs3(root_color, -qeval, child_color, move, /*last_is_null =*/false, is_capture, -eval, -eval - move_stack.moves[i].deval, effort_per_child, d+1, -beta, -alpha);
+                    //printf("                         a[%d]-b[%d] move %02x: %02x %s %02x qeval %d eval %d + d(eval) %d depth %d score %d (%ld nodes, %6.3f sec)\n", -beta, -alpha, board[move.to()], move.from()-0x22, (is_capture ? "x" : "-"), move.to()-0x22, qeval, eval, move_stack.moves[i].deval , child_result.max_depth, child_result.eval, child_result.n_nodes, (clock()-t)*(1.0/CLOCKS_PER_SEC));
+                } else {
+                    child_result = negapvs3(root_color, -qeval, child_color, move, /*last_is_null =*/false, is_capture, -eval, -eval - move_stack.moves[i].deval, effort_per_child, d+1, -alpha, -alpha);
+                    if(alpha < -child_result.eval && -child_result.eval <= beta) {
+                        // Full re-search
+                        if(d == 0) { printf("                           ... full research... (%6.3f sec)\n", (clock()-t)*(1.0/CLOCKS_PER_SEC)); }
+                        child_result = negapvs3(root_color, -qeval, child_color, move, /*last_is_null =*/false, is_capture, -eval, -eval - move_stack.moves[i].deval, effort_per_child, d+1, -beta, child_result.eval);
+                    }
+                }
+            
+                result.merge(child_result, move);
+                
+                if(alpha < -child_result.eval) { alpha = -child_result.eval; }
+            
+                if(d == 0) {
+                    printf("                         after checking move from %02x to %02x d(eval) %d d(eval2) %d depth %d score %d, best so far is from %02x to %02x score %d (%6.3f sec)\n", move.from()-0x22, move.to()-0x22, move_stack.moves[i].deval, move_stack.moves[i].deval2, child_result.max_depth, child_result.eval, result.best_move.from()-0x22, result.best_move.to()-0x22, result.eval, (clock()-t)*(1.0/CLOCKS_PER_SEC));
+                }
+
+                unmake_full_move(color, move, undo_info);
+            }
+        }
+
+        move_stack.pop_to(orig_msp); // Discard moves
+
+        return result;
+    }
+    
+    // PVS by effort with reverse quiessence.
+    // @return eval
+    NegamabResult negarazor3(const int root_color, int qeval, const int color, const Move last_move, const bool last_is_null, /*const bool last_is_check,*/ const bool last_is_capture, const int prev_eval, const int eval, const double effort, const int d, int alpha, int beta) {
+        // Update qeval if this is a quiet move - could do this in parent node - TODO promo and check are not quiet
+        if(!last_is_capture) { qeval = color == root_color ? prev_eval : eval; }
+
+        // Try null move - but not in check else the king is captured
+        if(false && d != 0 && 10000.0 < effort && !last_is_null /*&& TODO!last_is_check*/) {
+            // Mmm check?
+            const NegamabResult null_child_result = negapvs3(root_color, -qeval, other_color(color), Move(), /*last_is_null =*/true, /*last_is_check =/false,*/ /*last_is_capture =*/false, -eval, -eval, effort/1000.0, d+1, -beta, -beta);
+            if(beta < -null_child_result.eval) {
+                //printf("Null CUT!!!!!\n");
+                NegamabResult null_cut_result; null_cut_result.merge(null_child_result, Move());
+                return null_cut_result;
+            }
+        }
+        
+        // Save state.
+        const int orig_msp = move_stack.msp;
+
+        CheckData check_data;
+        gen_moves_with_eval_deltas(color, last_move, check_data);
+
+        // If there are no valid moves, then this is checkmate or stalemate - prefer shallower checkmates.
+        if(move_stack.msp == orig_msp) {
+            return NegamaxResult(check_data.in_check ? -CHECKMATE_EVAL + d/*checkmate*/ : 0/*stalemate*/);
+        }
+
+        // Update effort - consider each generated move effort 1.0
+        int n_moves = move_stack.msp - orig_msp;
+        double effort_per_child = (effort - n_moves)/n_moves;
+
+        if(d == 0) { printf("                       %d moves, effort per child %.2f\n", n_moves, effort_per_child); }
+        
         NegamabResult result(-1000000);
 
         if(effort_per_child < 1.0) {
