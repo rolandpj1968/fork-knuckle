@@ -142,7 +142,7 @@ char Keys[1040];
         void check(const int i) const { if(msp < 0 || 2048 <= msp) { printf("\nBOOOOOOOOM!\n\n"); exit(1); } }
         void check() const { check(msp); }
         
-        void push(const MoveAndEval move) { moves[msp++] = move; }
+        void push(const MoveAndEval move) { moves[msp++] = move; if(move.move.from() == 0) { *((int*)0) = 1111; } if(move.move.to() == 0) { *((int*)0) = 1111; } }
 
         void swap_pop(const int i) { moves[i] = moves[--msp]; }
 
@@ -619,6 +619,8 @@ char Keys[1040];
     // All distant checks are detected.
     void gen_pincheck_moves(const int color, CheckData& check_data, int pstack[], int ppos[], int& psp) {
         int king_pos = this->king_pos(color);
+        if(king_pos == 0) { return; /*TODO - LOL - taken the king after a null move :D*/ }
+        
         int fw = forward_dir(color);
 
         // Pintest, starting from possible pinners in enemy slider list.
@@ -683,6 +685,8 @@ char Keys[1040];
     // Determine if there is a contact check - there can only be one and it must be the last piece moved.
     void get_contact_check(const int color, Move last_move, CheckData& check_data) {
         int king_pos = this->king_pos(color);
+        if(king_pos == 0) { return; /*TODO - LOL - taken the king after a null move :D*/ }
+
         int last_to = last_move.to();
 
         //printf("  get_contact_check: last_move %x, last to %02x\n", last_move, last_to);
@@ -706,6 +710,7 @@ char Keys[1040];
         // No castling out of check.
         if(!check_data.in_check && has_castling_rights(color)) {
             const int king_pos = this->king_pos(color);         // King position
+            if(king_pos == 0) { return; /*TODO - LOL - taken the king after a null move :D*/ }
 
             if(has_castling_rights_kingside(color)
                && is_empty(king_pos+RT) && is_empty(king_pos+RT+RT)
@@ -726,6 +731,7 @@ char Keys[1040];
     bool is_ep_into_check(const int color, const int ep_pos, const int dir) const {
         //printf("RPJ   is_ep_into_check - ep_pos is %02x dir %02x\n", ep_pos-0x22, dir&0xff);
         const int king_pos = this->king_pos(color);
+        if(king_pos == 0) { return false; /*TODO - LOL - taken the king after a null move :D*/ }
 
         if(is_same_rank(ep_pos, king_pos)) {
             //printf("      same rank ep pos %02x king_pos %02x\n", ep_pos-0x22, king_pos-0x22);
@@ -777,6 +783,7 @@ char Keys[1040];
     // On contact check only King retreat or capture helps.
     // Use in that case specialized recapture generator.
     void gen_piece_moves_in_contact_check(const int color, int checker_pos) {
+        if(checker_pos == 0) { return; /*LOL null move bug*/}
         // Check for pawns - can only be 2.
         int bw = backward_dir(color);
 
@@ -894,6 +901,7 @@ char Keys[1040];
     // All king moves - note these are pseudo-moves. Not sure why we don't check for capturable here?
     void gen_king_moves(const int color, const CheckData& check_data) {
         const int king_pos = this->king_pos(color); // King position
+        if(king_pos == 0) { return; /*TODO - LOL - taken the king after a null move :D*/ }
 
         // TODO - improve check_dir management; this should be simpler.
         //   Note need to check for pawn cos check_dir is same as for B in contact.
@@ -1220,7 +1228,7 @@ char Keys[1040];
                 const int promo_kind = mode - PROMO_MODE;
                 delta = full_piece_pos_val(color, promo_kind, to) - full_piece_pos_val(color, W_PAWN_KIND, to);
             } else {
-                // Castling - the actual move is the king move, so calculate the delta.
+                // Castling - the actual move is the king move, so calculate the root delta delta.
                 const int rook_from = mode - CAS_MODE + from;
                 const int rook_to = (from+to) >> 1;
                 delta = full_piece_pos_val(color, ROOK_KIND, rook_to) - full_piece_pos_val(color, ROOK_KIND, rook_from);
@@ -1233,7 +1241,10 @@ char Keys[1040];
         if(!is_empty(capt_pos)) {
             const int capt_piece = board[capt_pos]; const int capt_kind = piece_to_kind[capt_piece];
             delta += full_piece_pos_val(other_color(color), capt_kind, capt_pos); // in our favour
+            //printf("                                               capt val %d\n", full_piece_pos_val(other_color(color), capt_kind, capt_pos));
         }
+
+        //if(delta == 1217) { printf("                                it's 1217 - from %d to %d\n", full_piece_pos_val(color, kind, from), full_piece_pos_val(color, kind, to)); }
 
         return delta;
 
@@ -1695,9 +1706,20 @@ char Keys[1040];
     
     // PVS by effort with reverse quiessence.
     // @return eval
-    NegamabResult negapvs3(const int root_color, int qeval, const int color, const Move last_move, const bool last_is_capture, const int prev_eval, const int eval, const double effort, const int d, int alpha, int beta) {
-        // Update qeval if this is a quiet move
+    NegamabResult negapvs3(const int root_color, int qeval, const int color, const Move last_move, const bool last_is_null, /*const bool last_is_check,*/ const bool last_is_capture, const int prev_eval, const int eval, const double effort, const int d, int alpha, int beta) {
+        // Update qeval if this is a quiet move - could do this in parent node - TODO promo and check are not quiet
         if(!last_is_capture) { qeval = color == root_color ? prev_eval : eval; }
+
+        // Try null move - but not in check else the king is captured
+        if(true && d != 0 && 10000.0 < effort && !last_is_null /*&& TODO!last_is_check*/) {
+            // Mmm check?
+            const NegamabResult null_child_result = negapvs3(root_color, -qeval, other_color(color), Move(), /*last_is_null =*/true, /*last_is_check =/false,*/ /*last_is_capture =*/false, -eval, -eval, effort/1000.0, d+1, -beta, -beta);
+            if(beta < -null_child_result.eval) {
+                //printf("Null CUT!!!!!\n");
+                NegamabResult null_cut_result; null_cut_result.merge(null_child_result, Move());
+                return null_cut_result;
+            }
+        }
         
         // Save state.
         const int orig_msp = move_stack.msp;
@@ -1731,12 +1753,18 @@ char Keys[1040];
             }
 
             // Now return the quiessed eval, which is essentially the eval of the root_color at the last quiet move.
-            if(-qeval < min_eval) {
-                result.merge(NegamaxResult(min_eval), min_move);
-            } else if(max_eval < -qeval) {
-                result.merge(NegamaxResult(max_eval), max_move);
-            } else {
+            // TODO - Correct for color? Also we're basically wasting the move gen of this node if we always go back to qeval.
+            if(last_is_capture) {
+                // only consider quiet moves - TODO promo and check are not quiet
                 result.merge(NegamaxResult(-qeval), min_move/*arbitrary*/);
+            } else {
+                if(-qeval < min_eval) {
+                    result.merge(NegamaxResult(min_eval), min_move);
+                } else if(max_eval < -qeval) {
+                    result.merge(NegamaxResult(max_eval), max_move);
+                } else {
+                    result.merge(NegamaxResult(-qeval), min_move/*arbitrary*/);
+                }
             }
         } else {
             const int child_color = other_color(color);
@@ -1744,20 +1772,34 @@ char Keys[1040];
             // Sort the moves - best-first
             std::stable_sort(move_stack.moves+orig_msp, move_stack.moves+move_stack.msp, MoveAndEval::byEvalGt);
 
-            for(int i = orig_msp; i < move_stack.msp && alpha <= beta; i++) {
+            int n_moves = (move_stack.msp - orig_msp + 0)/1; // Only fraction of the moves.
+
+            for(int i = orig_msp; i < orig_msp + n_moves/*move_stack.msp*/ && alpha <= beta; i++) {
                 const Move move = move_stack.moves[i].move;
                 const MoveUndoInfo undo_info = make_full_move(color, move);
                 const bool is_capture = undo_info.capt_piece != DUMMY;
-            
+
+                clock_t t = clock(); /*char move_str[8]; {
+                    move_pgn_str();
+                    }*/
                 NegamaxResult child_result;
                 if(i == orig_msp) { // 1st child
-                    child_result = negapvs3(root_color, -qeval, child_color, move, is_capture, -eval, -eval - move_stack.moves[i].deval, effort_per_child, d+1, -beta, -alpha);
+                    // if(d == 0) {
+                    //     // let's play - scout around the current eval...
+                    //     clock_t t2 = clock();
+                    //     int move_eval = -eval - move_stack.moves[i].deval;
+                    //     NegamaxResult child_result = negapvs3(root_color, -qeval, child_color, move, is_capture, -eval, move_eval, effort_per_child, d+1, -31, -31/*move_eval, move_eval*/);
+                    //     printf("                         scouted move %02x from %02x %s %02x d(eval) %d d(eval2) %d depth %d score %d (%ld nodes, %6.3f sec)\n", board[move.to()], move.from()-0x22, (is_capture ? "x" : "-"), move.to()-0x22, move_stack.moves[i].deval, move_stack.moves[i].deval2, child_result.max_depth, child_result.eval, child_result.n_nodes, (clock()-t2)*(1.0/CLOCKS_PER_SEC));
+                    // }
+                    t = clock();
+                    child_result = negapvs3(root_color, -qeval, child_color, move, /*last_is_null =*/false, is_capture, -eval, -eval - move_stack.moves[i].deval, effort_per_child, d+1, -beta, -alpha);
+                    //printf("                         a[%d]-b[%d] move %02x: %02x %s %02x qeval %d eval %d + d(eval) %d depth %d score %d (%ld nodes, %6.3f sec)\n", -beta, -alpha, board[move.to()], move.from()-0x22, (is_capture ? "x" : "-"), move.to()-0x22, qeval, eval, move_stack.moves[i].deval , child_result.max_depth, child_result.eval, child_result.n_nodes, (clock()-t)*(1.0/CLOCKS_PER_SEC));
                 } else {
-                    child_result = negapvs3(root_color, -qeval, child_color, move, is_capture, -eval, -eval - move_stack.moves[i].deval, effort_per_child, d+1, -alpha, -alpha);
+                    child_result = negapvs3(root_color, -qeval, child_color, move, /*last_is_null =*/false, is_capture, -eval, -eval - move_stack.moves[i].deval, effort_per_child, d+1, -alpha, -alpha);
                     if(alpha < -child_result.eval && -child_result.eval <= beta) {
                         // Full re-search
-                        if(d == 0) { printf("                           ... full research...\n"); }
-                        child_result = negapvs3(root_color, -qeval, child_color, move, is_capture, -eval, -eval - move_stack.moves[i].deval, effort_per_child, d+1, -beta, child_result.eval);
+                        if(d == 0) { printf("                           ... full research... (%6.3f sec)\n", (clock()-t)*(1.0/CLOCKS_PER_SEC)); }
+                        child_result = negapvs3(root_color, -qeval, child_color, move, /*last_is_null =*/false, is_capture, -eval, -eval - move_stack.moves[i].deval, effort_per_child, d+1, -beta, child_result.eval);
                     }
                 }
             
@@ -1766,7 +1808,7 @@ char Keys[1040];
                 if(alpha < -child_result.eval) { alpha = -child_result.eval; }
             
                 if(d == 0) {
-                    printf("                         after checking move from %02x to %02x d(eval) %d d(eval2) %d depth %d score %d, best so far is from %02x to %02x score %d\n", move.from()-0x22, move.to()-0x22, move_stack.moves[i].deval, move_stack.moves[i].deval2, child_result.max_depth, child_result.eval, result.best_move.from()-0x22, result.best_move.to()-0x22, result.eval);
+                    printf("                         after checking move from %02x to %02x d(eval) %d d(eval2) %d depth %d score %d, best so far is from %02x to %02x score %d (%6.3f sec)\n", move.from()-0x22, move.to()-0x22, move_stack.moves[i].deval, move_stack.moves[i].deval2, child_result.max_depth, child_result.eval, result.best_move.from()-0x22, result.best_move.to()-0x22, result.eval, (clock()-t)*(1.0/CLOCKS_PER_SEC));
                 }
 
                 unmake_full_move(color, move, undo_info);
@@ -1922,7 +1964,7 @@ char Keys[1040];
             //NegamabResult result = negamab21(color, last_move, full_eval(color), depth*1000000.0, 0/*root*/, -100000, 100000); // Note - depth here is really effort!
             const int eval = full_eval(color);
             //NegamabResult result = negamab3(color, eval, color, last_move, false, eval, eval, depth*1000000.0, 0/*root*/, -100000, 100000); // Note - depth here is really effort!
-            NegamabResult result = negapvs3(color, eval, color, last_move, false, eval, eval, depth*1000000.0, 0/*root*/, -100000, 100000); // Note - depth here is really effort!
+            NegamabResult result = negapvs3(color, eval, color, last_move, /*last_is_null =*/false, /*last_is_capture=*/false, eval, eval, depth*1000000000.0, 0/*root*/, -100000, 100000); // Note - depth here is really effort!
             
             // No legal move - checkmate or stalemate
             if(result.best_move.is_empty()) {
