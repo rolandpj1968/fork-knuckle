@@ -11,8 +11,8 @@
 #include "fork-knuckle.hpp"
 #include "eval.hpp"
 
-using namespace SunfishEvalTables;
-//using namespace SimpleEvalTables;
+//using namespace SunfishEvalTables;
+using namespace SimpleEvalTables;
 
 /***************************************************************************/
 /* Move generator based on separate Slider/Leaper/Pawn tables .            */
@@ -1820,13 +1820,13 @@ char Keys[1040];
         return result;
     }
     
-    // PVS by effort with reverse quiessence.
+    // Razoring, aka late-move-reduction (LMR) by effort with reverse quiessence.
     // @return eval
     NegamabResult negarazor3(const int root_color, int qeval, const int color, const Move last_move, const bool last_is_null, /*const bool last_is_check,*/ const bool last_is_capture, const int prev_eval, const int eval, const double effort, const int d, int alpha, int beta) {
         // Update qeval if this is a quiet move - could do this in parent node - TODO promo and check are not quiet
         if(!last_is_capture) { qeval = color == root_color ? prev_eval : eval; }
 
-        // Try null move - but not in check else the king is captured
+        // Try null move - but not in check else the king is captured - I think this is broken until we eliminate king capture (i.e. null-move in check)
         if(false && d != 0 && 10000.0 < effort && !last_is_null /*&& TODO!last_is_check*/) {
             // Mmm check?
             const NegamabResult null_child_result = negapvs3(root_color, -qeval, other_color(color), Move(), /*last_is_null =*/true, /*last_is_check =/false,*/ /*last_is_capture =*/false, -eval, -eval, effort/1000.0, d+1, -beta, -beta);
