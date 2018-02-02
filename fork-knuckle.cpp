@@ -2090,6 +2090,10 @@ char Keys[1040];
                 //result.merge(NegamaxResult(-eval - move_stack.moves[i].deval), move_stack.moves[i].move);
             }
 
+            if(true) {
+                // No quiescence - take the best move
+                result.merge(NegamaxResult(min_eval), min_move);
+            } else
             // Now return the quiesced eval, which is essentially the average eval across the last quiet move.
             // TODO - Also we're basically wasting the move gen of this node if we always go back to qeval.
             if(last_move.is_noisy()) {
