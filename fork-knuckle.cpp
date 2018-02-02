@@ -2119,13 +2119,19 @@ char Keys[1040];
             // Search at reduced depth to find a short-list of best moves
             const int full_list_reduction = d == 0 ? 10.0 : 100.0;
             const int short_list_reduction = d == 0 ? 1.0 : 10.0;
-            const int short_list_len = std::min(4, n_moves);
+#           define MAX_SHORTLIST_LEN 4
+            const int short_list_len = std::min(MAX_SHORTLIST_LEN, n_moves);
             
             const double full_list_effort_per_child = effort_per_child/full_list_reduction;
             if(d == 0 /*|| d == 1*/) { if(d == 1) { printf("        "); } printf("                       raz5 - full list %d moves, effort per child %.2f\n", n_moves, full_list_effort_per_child); }
 
+            int short_list_move_indexes[MAX_SHORTLIST_LEN];
+            int worst_shortlist_deval2 = 1000000;
+            int worst_shortlist_i = 0;
+
+            const int orig_alpha = alpha;
             // Note we should really do alpha tracking at N'th best child, but let's see how a full search goes...
-            for(int i = orig_msp; i < orig_msp + n_moves; i++) {
+            for(int i = orig_msp; i < orig_msp + n_moves && alpha <= beta; i++) {
                 const Move move = move_stack.moves[i].move;
                 const MoveUndoInfo undo_info = make_full_move(color, move);
                 const int child_eval = eval + move_stack.moves[i].deval;
@@ -2134,10 +2140,41 @@ char Keys[1040];
                 clock_t t = clock();
                 NegamaxResult child_result = negaraz5(-child_qeval, child_color, move, -child_eval, full_list_effort_per_child, d+1, -beta, -alpha);
 
-                move_stack.moves[i].deval2 = -child_result.eval - eval;
+                int deval2 = -child_result.eval - eval;
+                move_stack.moves[i].deval2 = deval2;
+                if(i < short_list_len) {
+                    short_list_move_indexes[i] = i;
+                    if(deval2 < worst_shortlist_deval2) {
+                        worst_shortlist_deval2 = deval2;
+                        worst_shortlist_i = i;
+                    }
+                } else {
+                    if(worst_shortlist_deval2 < deval2) {
+                        short_list_move_indexes[worst_shortlist_i] = i;
+                        worst_shortlist_deval2 = 1000000;
+                        // Recalc the worst short lister.
+                        for(int j = 0; j < short_list_len; j++) {
+                            int this_deval2 = move_stack.moves[short_list_move_indexes[j]].deval2;
+                            if(this_deval2 < worst_shortlist_deval2) {
+                                worst_shortlist_deval2 = this_deval2;
+                                worst_shortlist_i = j;
+                            }
+                        }
+                        if(d == 0 /*|| d == 1*/) {
+                            if(d == 1) { printf("        "); } printf("                                 %d'th worst move is now move %d - deval2 %d\n", short_list_len, worst_shortlist_i, worst_shortlist_deval2);
+                        }
+                    }
+                    int worst_shortlist_eval = eval + worst_shortlist_deval2;
+                    if(alpha < worst_shortlist_eval) {
+                        alpha = worst_shortlist_eval;
+                        // if(beta < alpha) {
+                        //     // Try to chop 
+                        // }
+                    }
+                }
 
                 if(d == 0 /*|| d == 1*/) {
-                    if(d == 1) { printf("        "); } printf("                           long list move from %02x to %02x d(eval) %d d(eval2) %d depth %d score %d (%6.3f sec)\n", move.from()-0x22, move.to()-0x22, move_stack.moves[i].deval, move_stack.moves[i].deval2, child_result.max_depth, child_result.eval, (clock()-t)*(1.0/CLOCKS_PER_SEC));
+                    if(d == 1) { printf("        "); } printf("                           long list move from %02x to %02x [alpha %d beta %d] d(eval) %d d(eval2) %d depth %d score %d (%6.3f sec)\n", move.from()-0x22, move.to()-0x22, alpha, beta, move_stack.moves[i].deval, move_stack.moves[i].deval2, child_result.max_depth, child_result.eval, (clock()-t)*(1.0/CLOCKS_PER_SEC));
                 }
 
                 unmake_full_move(color, move, undo_info);
@@ -2149,9 +2186,10 @@ char Keys[1040];
             const double short_list_effort_per_child = effort_per_child/short_list_reduction;
             if(d == 0 /*|| d == 1*/) { if(d == 1) { printf("        "); } printf("                       raz5 - short list %d moves, effort per child %.2f\n", short_list_len, short_list_effort_per_child); }
 
-            const int orig_alpha = alpha;
+            alpha = orig_alpha;
+            //const int orig_alpha = alpha;
             // Then do alpha-beta on the short-list, but don't fail-fast unless we're the root (hrmmm, no pruning ever?)
-            for(int i = orig_msp; i < orig_msp + short_list_len /*&& alpha <= beta*/; i++) {
+            for(int i = orig_msp; i < orig_msp + short_list_len && alpha <= beta; i++) {
                 const Move move = move_stack.moves[i].move;
                 const MoveUndoInfo undo_info = make_full_move(color, move);
                 const int child_eval = eval + move_stack.moves[i].deval;
@@ -2362,7 +2400,7 @@ char Keys[1040];
             //NegamabResult result = negapvs3(color, eval, color, last_move, /*last_is_null =*/false, /*last_is_capture=*/false, eval, eval, depth*1000000000.0, 0/*root*/, -100000, 100000); // Note - depth here is really effort!
             //NegamabResult result = negapvs4(eval, color, last_move, eval, depth*1000000000.0, 0/*root*/, -100000, 100000); // Note - depth here is really effort!
             //NegamabResult result = negapvs5(eval, color, last_move, eval, depth*1000.0, 0/*root*/, -100000, 100000); // Note - depth here is really effort!
-            NegamabResult result = negaraz5(eval, color, last_move, eval, depth*1000.0, 0/*root*/, -100000, 100000); // Note - depth here is really effort!
+            NegamabResult result = negaraz5(eval, color, last_move, eval, depth*1000000000000.0, 0/*root*/, -100000, 100000); // Note - depth here is really effort!
             
             // No legal move - checkmate or stalemate
             if(result.best_move.is_empty()) {
