@@ -2054,9 +2054,9 @@ char Keys[1040];
         return result;
     }
     
-    // Razoring, aka late-move-reduction (LMR) by effort with reverse quiessence.
+    // Razoring, aka late-move-reduction (LMR) by effort.
     // @return eval
-    NegamabResult negaraz5(const int qeval, const int color, const Move last_move, const int eval, const double effort, const int d, int alpha, int beta) {
+    NegamabResult negaraz5(const int color, const Move last_move, const int eval, const double effort, const int d, int alpha, int beta) {
         // Save state.
         const int orig_msp = move_stack.msp;
 
@@ -2079,37 +2079,15 @@ char Keys[1040];
         // No quiescence for now...
         NegamabResult result(-1000000);
 
-        if(effort_per_child < 1.0) {
-            // Passive quiessence
-            int min_eval = 1000000, max_eval = -1000000;
-            Move min_move, max_move;
+        // Always terminate at the same color (double-ply)
+        if((d&1) == 0 && effort_per_child < 1.0) {
+            int min_eval = 1000000;
+            Move min_move;
             for(int i = orig_msp; i < move_stack.msp; i++) {
                 const int move_eval = -eval - move_stack.moves[i].deval;
                 if(move_eval < min_eval) { min_eval = move_eval; min_move = move_stack.moves[i].move; }
-                if(max_eval < move_eval) { max_eval = move_eval; max_move = move_stack.moves[i].move; }
-                //result.merge(NegamaxResult(-eval - move_stack.moves[i].deval), move_stack.moves[i].move);
             }
-
-            if(true) {
-                // No quiescence - take the best move
-                result.merge(NegamaxResult(min_eval), min_move);
-            } else
-            // Now return the quiesced eval, which is essentially the average eval across the last quiet move.
-            // TODO - Also we're basically wasting the move gen of this node if we always go back to qeval.
-            if(last_move.is_noisy()) {
-                // only consider quiet moves - TODO promo and check are not quiet
-                // TODO - if there is no possible noisy move now, then we are quiesced.
-                result.merge(NegamaxResult(-qeval), min_move/*arbitrary*/);
-            } else {
-                // TODO - use best 'quiet' move as quiesced value??? Can't remember what I decided.
-                if(-qeval < min_eval) {
-                    result.merge(NegamaxResult(min_eval), min_move);
-                } else if(max_eval < -qeval) {
-                    result.merge(NegamaxResult(max_eval), max_move);
-                } else {
-                    result.merge(NegamaxResult(-qeval), min_move/*arbitrary*/);
-                }
-            }
+            result.merge(NegamaxResult(min_eval), min_move);
         } else {
             const int child_color = other_color(color);
 
@@ -2135,10 +2113,13 @@ char Keys[1040];
                 const Move move = move_stack.moves[i].move;
                 const MoveUndoInfo undo_info = make_full_move(color, move);
                 const int child_eval = eval + move_stack.moves[i].deval;
-                const int child_qeval = move.is_noisy() ? qeval : (eval + child_eval)/2;
 
+                if(d == 0 /*|| d == 1*/) {
+                    if(d == 1) { printf("        "); } printf("                           long %s-%s [%d,%d] d(eval) %d ...\n", SQ(move.from()), SQ(move.to()), alpha, beta, move_stack.moves[i].deval);
+                }
+                
                 clock_t t = clock();
-                NegamaxResult child_result = negaraz5(-child_qeval, child_color, move, -child_eval, full_list_effort_per_child, d+1, -beta, -alpha);
+                NegamaxResult child_result = negaraz5(child_color, move, -child_eval, full_list_effort_per_child, d+1, -beta, -alpha);
 
                 int deval2 = -child_result.eval - eval;
                 move_stack.moves[i].deval2 = deval2;
@@ -2161,20 +2142,17 @@ char Keys[1040];
                             }
                         }
                         if(d == 0 /*|| d == 1*/) {
-                            if(d == 1) { printf("        "); } printf("                                 %d'th worst move is now move %d - deval2 %d\n", short_list_len, worst_shortlist_i, worst_shortlist_deval2);
+                            if(d == 1) { printf("        "); } printf("                                 %d'th worst move is now move %d - deval2 %d\n", short_list_len, short_list_move_indexes[worst_shortlist_i], worst_shortlist_deval2);
                         }
                     }
                     int worst_shortlist_eval = eval + worst_shortlist_deval2;
                     if(alpha < worst_shortlist_eval) {
                         alpha = worst_shortlist_eval;
-                        // if(beta < alpha) {
-                        //     // Try to chop 
-                        // }
                     }
                 }
 
                 if(d == 0 /*|| d == 1*/) {
-                    if(d == 1) { printf("        "); } printf("                           long list move from %02x to %02x [alpha %d beta %d] d(eval) %d d(eval2) %d depth %d score %d (%6.3f sec)\n", move.from()-0x22, move.to()-0x22, alpha, beta, move_stack.moves[i].deval, move_stack.moves[i].deval2, child_result.max_depth, child_result.eval, (clock()-t)*(1.0/CLOCKS_PER_SEC));
+                    if(d == 1) { printf("        "); } printf("                            ... %s-%s [%d,%d] d(eval) %d d(eval2) %d depth %d score %d (%6.3f sec)\n", SQ(move.from()), SQ(move.to()), alpha, beta, move_stack.moves[i].deval, move_stack.moves[i].deval2, child_result.max_depth, child_result.eval, (clock()-t)*(1.0/CLOCKS_PER_SEC));
                 }
 
                 unmake_full_move(color, move, undo_info);
@@ -2187,27 +2165,18 @@ char Keys[1040];
             if(d == 0 /*|| d == 1*/) { if(d == 1) { printf("        "); } printf("                       raz5 - short list %d moves, effort per child %.2f\n", short_list_len, short_list_effort_per_child); }
 
             alpha = orig_alpha;
-            //const int orig_alpha = alpha;
-            // Then do alpha-beta on the short-list, but don't fail-fast unless we're the root (hrmmm, no pruning ever?)
+            // Then do alpha-beta on the short-list
             for(int i = orig_msp; i < orig_msp + short_list_len && alpha <= beta; i++) {
                 const Move move = move_stack.moves[i].move;
                 const MoveUndoInfo undo_info = make_full_move(color, move);
                 const int child_eval = eval + move_stack.moves[i].deval;
-                const int child_qeval = move.is_noisy() ? qeval : (eval + child_eval)/2;
+
+                if(d == 0 /*|| d == 1*/) {
+                    if(d == 1) { printf("        "); } printf("                         short %s-%s [%d,%d] d(eval) %d ...\n", SQ(move.from()), SQ(move.to()), alpha, beta, move_stack.moves[i].deval);
+                }
 
                 clock_t t = clock();
-                NegamaxResult child_result;
-                if(i == orig_msp) { // 1st child
-                    t = clock();
-                    child_result = negaraz5(-child_qeval, child_color, move, -child_eval, short_list_effort_per_child, d+1, -beta, -alpha);
-                } else {
-                    child_result = negaraz5(-child_qeval, child_color, move, -child_eval, short_list_effort_per_child, d+1, -alpha, -alpha);
-                    if(alpha < -child_result.eval && -child_result.eval <= beta) {
-                        // Full re-search
-                        if(d == 0 /*|| d == 1*/) { if(d == 1) { printf("        "); } printf("                           ... full research... (%6.3f sec)\n", (clock()-t)*(1.0/CLOCKS_PER_SEC)); }
-                        child_result = negaraz5(-child_qeval, child_color, move, -child_eval, short_list_effort_per_child, d+1, -beta, child_result.eval);
-                    }
-                }
+                NegamaxResult child_result = negaraz5(child_color, move, -child_eval, short_list_effort_per_child, d+1, -beta, -alpha);
             
                 result.merge(child_result, move);
                 
@@ -2216,7 +2185,7 @@ char Keys[1040];
                 if(alpha < -child_result.eval) { alpha = -child_result.eval; }
             
                 if(d == 0 /*|| d == 1*/) {
-                    if(d == 1) { printf("        "); } printf("                         shortlist move from %02x to %02x d(eval) %d d(eval2) %d depth %d score %d, best so far is from %02x to %02x score %d (%6.3f sec)\n", move.from()-0x22, move.to()-0x22, move_stack.moves[i].deval, move_stack.moves[i].deval2, child_result.max_depth, child_result.eval, result.best_move.from()-0x22, result.best_move.to()-0x22, result.eval, (clock()-t)*(1.0/CLOCKS_PER_SEC));
+                    if(d == 1) { printf("        "); } printf("                          ...  %s-%s d(eval) %d d(eval2) %d depth %d score %d, best %s-%s score %d (%6.3f sec)\n", SQ(move.from()), SQ(move.to()), move_stack.moves[i].deval, move_stack.moves[i].deval2, child_result.max_depth, child_result.eval, SQ(result.best_move.from()), SQ(result.best_move.to()), result.eval, (clock()-t)*(1.0/CLOCKS_PER_SEC));
                 }
 
                 unmake_full_move(color, move, undo_info);
@@ -2237,9 +2206,8 @@ char Keys[1040];
                 const Move move = move_stack.moves[best_i].move;
                 const MoveUndoInfo undo_info = make_full_move(color, move);
                 const int child_eval = eval + move_stack.moves[best_i].deval;
-                const int child_qeval = move.is_noisy() ? qeval : (eval + child_eval)/2;
 
-                NegamaxResult child_result = negaraz5(-child_qeval, child_color, move, -child_eval, effort_per_child, d+1, -beta, -alpha);
+                NegamaxResult child_result = negaraz5(child_color, move, -child_eval, effort_per_child, d+1, -beta, -alpha);
 
                 result.eval = -10000;
                 result.merge(child_result, move);
@@ -2400,7 +2368,7 @@ char Keys[1040];
             //NegamabResult result = negapvs3(color, eval, color, last_move, /*last_is_null =*/false, /*last_is_capture=*/false, eval, eval, depth*1000000000.0, 0/*root*/, -100000, 100000); // Note - depth here is really effort!
             //NegamabResult result = negapvs4(eval, color, last_move, eval, depth*1000000000.0, 0/*root*/, -100000, 100000); // Note - depth here is really effort!
             //NegamabResult result = negapvs5(eval, color, last_move, eval, depth*1000.0, 0/*root*/, -100000, 100000); // Note - depth here is really effort!
-            NegamabResult result = negaraz5(eval, color, last_move, eval, depth*1000000000000.0, 0/*root*/, -100000, 100000); // Note - depth here is really effort!
+            NegamabResult result = negaraz5(color, last_move, eval, depth*1000000000000.0, 0/*root*/, -100000, 100000); // Note - depth here is really effort!
             
             // No legal move - checkmate or stalemate
             if(result.best_move.is_empty()) {
@@ -2411,8 +2379,7 @@ char Keys[1040];
             t = clock()-t;
             
             const Move best_move = result.best_move;
-            char from_str[3]; pos_str(best_move.from(), from_str); char to_str[3]; pos_str(best_move.to(), to_str);
-            printf("Best move %s %s: delta %d cp (%ld nodes depth %d, %6.3f sec)\n\n", from_str, to_str, (color == WHITE ? result.eval : -result.eval), result.n_nodes, result.max_depth, t*(1./CLOCKS_PER_SEC));
+            printf("Best move %s-%s: delta %d cp (%ld nodes depth %d, %6.3f sec)\n\n", SQ(best_move.from()), SQ(best_move.to()), (color == WHITE ? result.eval : -result.eval), result.n_nodes, result.max_depth, t*(1./CLOCKS_PER_SEC));
 
             // Perform move and swap color.
             //make_full_move(color, best_move);
