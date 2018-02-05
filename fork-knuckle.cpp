@@ -2103,9 +2103,14 @@ char Keys[1040];
             const double full_list_effort_per_child = effort_per_child/full_list_reduction;
             if(d == 0 /*|| d == 1*/) { if(d == 1) { printf("        "); } printf("                       raz5 - full list %d moves, effort per child %.2f\n", n_moves, full_list_effort_per_child); }
 
+            // Set deval2 to minimum infinity so that untraversed moves drop away on sort.
+            for(int i = orig_msp; i < orig_msp + n_moves; i++) {
+                move_stack.moves[i].deval2 = -CHECKMATE_EVAL-1;
+            }
+                
             int short_list_move_indexes[MAX_SHORTLIST_LEN];
-            int worst_shortlist_deval2 = 1000000;
-            int worst_shortlist_i = 0;
+            int worst_shortlist_deval2 = CHECKMATE_EVAL+1;
+            int worst_shortlist_index = 0;
 
             const int orig_alpha = alpha;
             // Note we should really do alpha tracking at N'th best child, but let's see how a full search goes...
@@ -2114,8 +2119,8 @@ char Keys[1040];
                 const MoveUndoInfo undo_info = make_full_move(color, move);
                 const int child_eval = eval + move_stack.moves[i].deval;
 
-                if(d == 0 /*|| d == 1*/) {
-                    if(d == 1) { printf("        "); } printf("                           long %s-%s [%d,%d] d(eval) %d ...\n", SQ(move.from()), SQ(move.to()), alpha, beta, move_stack.moves[i].deval);
+                if(d == 0 || d == 1) {
+                    if(d == 1) { printf("        "); } printf("                           %d: long %s-%s [%d,%d] d(eval) %d ...\n", d, SQ(move.from()), SQ(move.to()), alpha, beta, move_stack.moves[i].deval);
                 }
                 
                 clock_t t = clock();
@@ -2123,46 +2128,55 @@ char Keys[1040];
 
                 int deval2 = -child_result.eval - eval;
                 move_stack.moves[i].deval2 = deval2;
-                if(i < short_list_len) {
-                    short_list_move_indexes[i] = i;
+                const int move_index = i - orig_msp;
+                if(move_index < short_list_len) {
+                    short_list_move_indexes[move_index] = move_index;
                     if(deval2 < worst_shortlist_deval2) {
                         worst_shortlist_deval2 = deval2;
-                        worst_shortlist_i = i;
+                        worst_shortlist_index = move_index;
                     }
                 } else {
                     if(worst_shortlist_deval2 < deval2) {
-                        short_list_move_indexes[worst_shortlist_i] = i;
-                        worst_shortlist_deval2 = 1000000;
+                        short_list_move_indexes[worst_shortlist_index] = move_index;
+                        worst_shortlist_deval2 = CHECKMATE_EVAL+1;
                         // Recalc the worst short lister.
                         for(int j = 0; j < short_list_len; j++) {
-                            int this_deval2 = move_stack.moves[short_list_move_indexes[j]].deval2;
+                            int this_deval2 = move_stack.moves[orig_msp + short_list_move_indexes[j]].deval2;
                             if(this_deval2 < worst_shortlist_deval2) {
                                 worst_shortlist_deval2 = this_deval2;
-                                worst_shortlist_i = j;
+                                worst_shortlist_index = j;
                             }
                         }
-                        if(d == 0 /*|| d == 1*/) {
-                            if(d == 1) { printf("        "); } printf("                                 %d'th worst move is now move %d - deval2 %d\n", short_list_len, short_list_move_indexes[worst_shortlist_i], worst_shortlist_deval2);
+                        if(d == 0 || d == 1) {
+                            if(d == 1) { printf("        "); } printf("                                 %d: %d'th worst move is now move %d - deval2 %d\n", d, short_list_len, short_list_move_indexes[worst_shortlist_index], worst_shortlist_deval2);
                         }
                     }
                     int worst_shortlist_eval = eval + worst_shortlist_deval2;
                     if(alpha < worst_shortlist_eval) {
                         alpha = worst_shortlist_eval;
+                        if(alpha > beta) {
+                            // Early out
+                            result.merge(child_result, move);
+                            unmake_full_move(color, move, undo_info);
+                            move_stack.pop_to(orig_msp); // Discard moves
+                            return result;
+                        }
                     }
                 }
 
-                if(d == 0 /*|| d == 1*/) {
-                    if(d == 1) { printf("        "); } printf("                            ... %s-%s [%d,%d] d(eval) %d d(eval2) %d depth %d score %d (%6.3f sec)\n", SQ(move.from()), SQ(move.to()), alpha, beta, move_stack.moves[i].deval, move_stack.moves[i].deval2, child_result.max_depth, child_result.eval, (clock()-t)*(1.0/CLOCKS_PER_SEC));
+                if(d == 0 || d == 1) {
+                    if(d == 1) { printf("        "); } printf("                           %d: ... %s-%s [%d,%d] d(eval) %d d(eval2) %d depth %d score %d (%6.3f sec)\n", d, SQ(move.from()), SQ(move.to()), alpha, beta, move_stack.moves[i].deval, move_stack.moves[i].deval2, child_result.max_depth, child_result.eval, (clock()-t)*(1.0/CLOCKS_PER_SEC));
                 }
 
                 unmake_full_move(color, move, undo_info);
+                
             }
 
             // Sort the moves again - best-first by reduced long-list search
             std::stable_sort(move_stack.moves+orig_msp, move_stack.moves+move_stack.msp, MoveAndEval::byEval2Gt);
 
             const double short_list_effort_per_child = effort_per_child/short_list_reduction;
-            if(d == 0 /*|| d == 1*/) { if(d == 1) { printf("        "); } printf("                       raz5 - short list %d moves, effort per child %.2f\n", short_list_len, short_list_effort_per_child); }
+            if(d == 0 || d == 1) { if(d == 1) { printf("        "); } printf("                       %d: raz5 - short list %d moves, effort per child %.2f\n", d, short_list_len, short_list_effort_per_child); }
 
             alpha = orig_alpha;
             // Then do alpha-beta on the short-list
@@ -2171,8 +2185,8 @@ char Keys[1040];
                 const MoveUndoInfo undo_info = make_full_move(color, move);
                 const int child_eval = eval + move_stack.moves[i].deval;
 
-                if(d == 0 /*|| d == 1*/) {
-                    if(d == 1) { printf("        "); } printf("                         short %s-%s [%d,%d] d(eval) %d ...\n", SQ(move.from()), SQ(move.to()), alpha, beta, move_stack.moves[i].deval);
+                if(d == 0 || d == 1) {
+                    if(d == 1) { printf("        "); } printf("                         %d: short %s-%s [%d,%d] d(eval) %d ...\n", d, SQ(move.from()), SQ(move.to()), alpha, beta, move_stack.moves[i].deval);
                 }
 
                 clock_t t = clock();
@@ -2182,10 +2196,18 @@ char Keys[1040];
                 
                 move_stack.moves[i].deval2 = -child_result.eval - eval;
 
-                if(alpha < -child_result.eval) { alpha = -child_result.eval; }
+                if(alpha < -child_result.eval) {
+                    alpha = -child_result.eval;
+                    if(alpha > beta) {
+                        // Early out
+                        unmake_full_move(color, move, undo_info);
+                        move_stack.pop_to(orig_msp); // Discard moves
+                        return result;
+                    }
+                }
             
-                if(d == 0 /*|| d == 1*/) {
-                    if(d == 1) { printf("        "); } printf("                          ...  %s-%s d(eval) %d d(eval2) %d depth %d score %d, best %s-%s score %d (%6.3f sec)\n", SQ(move.from()), SQ(move.to()), move_stack.moves[i].deval, move_stack.moves[i].deval2, child_result.max_depth, child_result.eval, SQ(result.best_move.from()), SQ(result.best_move.to()), result.eval, (clock()-t)*(1.0/CLOCKS_PER_SEC));
+                if(d == 0 || d == 1) {
+                    if(d == 1) { printf("        "); } printf("                         %d: ...  %s-%s d(eval) %d d(eval2) %d depth %d score %d, best %s-%s score %d (%6.3f sec)\n", d, SQ(move.from()), SQ(move.to()), move_stack.moves[i].deval, move_stack.moves[i].deval2, child_result.max_depth, child_result.eval, SQ(result.best_move.from()), SQ(result.best_move.to()), result.eval, (clock()-t)*(1.0/CLOCKS_PER_SEC));
                 }
 
                 unmake_full_move(color, move, undo_info);
@@ -2194,9 +2216,9 @@ char Keys[1040];
             alpha = orig_alpha;
             // Finally do full-depth search on the best short-list move.
             if(d != 0) {
-                int best_deval2 = -100000;
+                int best_deval2 = -CHECKMATE_EVAL - 1;
                 int best_i = 0;
-                for(int i = 0; i < short_list_len; i++) {
+                for(int i = orig_msp; i < orig_msp + short_list_len; i++) {
                     if(best_deval2 < move_stack.moves[i].deval2) {
                         best_deval2 = move_stack.moves[i].deval2;
                         best_i = i;
@@ -2207,11 +2229,16 @@ char Keys[1040];
                 const MoveUndoInfo undo_info = make_full_move(color, move);
                 const int child_eval = eval + move_stack.moves[best_i].deval;
 
+                clock_t t = clock();
                 NegamaxResult child_result = negaraz5(child_color, move, -child_eval, effort_per_child, d+1, -beta, -alpha);
 
                 result.eval = -10000;
                 result.merge(child_result, move);
 
+                if(d == 0 || d == 1) {
+                    if(d == 1) { printf("        "); } printf("                       %d: final %s-%s d(eval) %d d(eval2) %d depth %d score %d, best %s-%s score %d (%6.3f sec)\n", d, SQ(move.from()), SQ(move.to()), move_stack.moves[best_i].deval, move_stack.moves[best_i].deval2, child_result.max_depth, child_result.eval, SQ(result.best_move.from()), SQ(result.best_move.to()), result.eval, (clock()-t)*(1.0/CLOCKS_PER_SEC));
+                }
+                
                 unmake_full_move(color, move, undo_info);
             }
         }
@@ -2368,7 +2395,7 @@ char Keys[1040];
             //NegamabResult result = negapvs3(color, eval, color, last_move, /*last_is_null =*/false, /*last_is_capture=*/false, eval, eval, depth*1000000000.0, 0/*root*/, -100000, 100000); // Note - depth here is really effort!
             //NegamabResult result = negapvs4(eval, color, last_move, eval, depth*1000000000.0, 0/*root*/, -100000, 100000); // Note - depth here is really effort!
             //NegamabResult result = negapvs5(eval, color, last_move, eval, depth*1000.0, 0/*root*/, -100000, 100000); // Note - depth here is really effort!
-            NegamabResult result = negaraz5(color, last_move, eval, depth*1000000000000.0, 0/*root*/, -100000, 100000); // Note - depth here is really effort!
+            NegamabResult result = negaraz5(color, last_move, eval, depth*1000000000.0, 0/*root*/, -100000, 100000); // Note - depth here is really effort!
             
             // No legal move - checkmate or stalemate
             if(result.best_move.is_empty()) {
