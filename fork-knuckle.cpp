@@ -1289,7 +1289,7 @@ char Keys[1040];
     
     // Razoring, aka late-move-reduction (LMR) by effort.
     // @return eval
-    NegamaxResult negaraz5(const int color, const Move last_move, const int eval, const double effort, const int d, int alpha, int beta) {
+    NegamaxResult negaraz(const int color, const Move last_move, const int eval, const int dtogo, const int d, int alpha, int beta) {
         // Save state.
         const int orig_msp = move_stack.msp;
 
@@ -1303,18 +1303,18 @@ char Keys[1040];
 
         // Update effort
         int n_moves = move_stack.msp - orig_msp;
-        double effort_per_child = (effort - n_moves)/sqrt(n_moves); // trying to find a fn that makes effort somewhat linear
+        int child_dtogo = dtogo-1;
 
         if(d == 0 /*|| d == 1*/) {
-            printf("                       raz5 - %d moves, effort per child %.2f\n", n_moves, effort_per_child);
+            printf("                       raz - %d moves, dtogo %d\n", n_moves, dtogo);
         }
         
         // No quiescence for now...
-        NegamaxResult result(-1000000);
+        NegamaxResult result(-CHECKMATE_EVAL-1);
 
         // Always terminate at the same color (double-ply)
-        if((d&1) == 0 && effort_per_child < 1.0) {
-            int min_eval = 1000000;
+        if((d&1) == 0 && child_dtogo <= 0) {
+            int min_eval = CHECKMATE_EVAL + 1;
             Move min_move;
             for(int i = orig_msp; i < move_stack.msp; i++) {
                 const int move_eval = -eval - move_stack.moves[i].deval;
@@ -1328,13 +1328,13 @@ char Keys[1040];
             std::stable_sort(move_stack.moves+orig_msp, move_stack.moves+move_stack.msp, MoveAndEval::byEvalGt);
 
             // Search at reduced depth to find a short-list of best moves
-            const int full_list_reduction = d == 0 ? 10.0 : 100.0;
-            const int short_list_reduction = d == 0 ? 1.0 : 10.0;
+            const int full_list_reduction  = d == 0 ? 2 : 4;
+            const int short_list_reduction = d == 0 ? 1 : 2;
 #           define MAX_SHORTLIST_LEN 4
             const int short_list_len = std::min(MAX_SHORTLIST_LEN, n_moves);
             
-            const double full_list_effort_per_child = effort_per_child/full_list_reduction;
-            if(d == 0 /*|| d == 1*/) { if(d == 1) { printf("        "); } printf("                       raz5 - full list %d moves, effort per child %.2f\n", n_moves, full_list_effort_per_child); }
+            const int full_list_dtogo = dtogo - full_list_reduction;
+            if(d == 0 /*|| d == 1*/) { if(d == 1) { printf("        "); } printf("                       raz - full list %d moves, child dtogo %d\n", n_moves, full_list_dtogo); }
 
             // Set deval2 to minimum infinity so that untraversed moves drop away on sort.
             for(int i = orig_msp; i < orig_msp + n_moves; i++) {
@@ -1357,7 +1357,7 @@ char Keys[1040];
                 }
                 
                 clock_t t = clock();
-                NegamaxResult child_result = negaraz5(child_color, move, -child_eval, full_list_effort_per_child, d+1, -beta, -alpha);
+                NegamaxResult child_result = negaraz(child_color, move, -child_eval, full_list_dtogo, d+1, -beta, -alpha);
 
                 int deval2 = -child_result.eval - eval;
                 move_stack.moves[i].deval2 = deval2;
@@ -1408,8 +1408,8 @@ char Keys[1040];
             // Sort the moves again - best-first by reduced long-list search
             std::stable_sort(move_stack.moves+orig_msp, move_stack.moves+move_stack.msp, MoveAndEval::byEval2Gt);
 
-            const double short_list_effort_per_child = effort_per_child/short_list_reduction;
-            if(d == 0 || d == 1) { if(d == 1) { printf("        "); } printf("                       %d: raz5 - short list %d moves, effort per child %.2f\n", d, short_list_len, short_list_effort_per_child); }
+            const double short_list_dtogo = dtogo - short_list_reduction;
+            if(d == 0 || d == 1) { if(d == 1) { printf("        "); } printf("                       %d: raz - short list %d moves, child dtogo %.2f\n", d, short_list_len, short_list_dtogo); }
 
             alpha = orig_alpha;
             // Then do alpha-beta on the short-list
@@ -1423,7 +1423,7 @@ char Keys[1040];
                 }
 
                 clock_t t = clock();
-                NegamaxResult child_result = negaraz5(child_color, move, -child_eval, short_list_effort_per_child, d+1, -beta, -alpha);
+                NegamaxResult child_result = negaraz(child_color, move, -child_eval, short_list_dtogo, d+1, -beta, -alpha);
             
                 result.merge(child_result, move);
                 
@@ -1463,7 +1463,7 @@ char Keys[1040];
                 const int child_eval = eval + move_stack.moves[best_i].deval;
 
                 clock_t t = clock();
-                NegamaxResult child_result = negaraz5(child_color, move, -child_eval, effort_per_child, d+1, -beta, -alpha);
+                NegamaxResult child_result = negaraz(child_color, move, -child_eval, child_dtogo, d+1, -beta, -alpha);
 
                 result.eval = -10000;
                 result.merge(child_result, move);
@@ -1617,7 +1617,7 @@ char Keys[1040];
             
             const int eval = full_eval(color);
 
-            NegamaxResult result = negaraz5(color, last_move, eval, depth*1000000000.0, 0/*root*/, -100000, 100000); // Note - depth here is really effort!
+            NegamaxResult result = negaraz(color, last_move, eval, depth, 0/*root*/, -100000, 100000); // Note - depth here is really effort!
             
             // No legal move - checkmate or stalemate
             if(result.best_move.is_empty()) {
