@@ -1287,7 +1287,7 @@ char Keys[1040];
         }
     };
 
-    const int DEBUG_D = 3;
+    const int DEBUG_D = 1;
 
     void PD(int d) { for(int i = 0; i < d; i++) { printf("    "); } }
     
@@ -1330,12 +1330,12 @@ char Keys[1040];
             std::stable_sort(move_stack.moves+orig_msp, move_stack.moves+move_stack.msp, MoveAndEval::bySevalGt);
 
             // Search at reduced depth to find a short-list of best moves
-            const int full_list_reduction  = d == 0 ? 1 : 1;
-            const int short_list_reduction = d == 0 ? 1 : 1;
+            const int full_list_reduction  = d == 0 ? 1 : 2;
+            const int short_list_reduction = d == 0 ? 0 : 1;
 #           define MAX_SHORTLIST_LEN 4
             const int short_list_len = std::min(MAX_SHORTLIST_LEN, n_moves);
             
-            const int full_list_dtogo = dtogo - full_list_reduction;
+            const int full_list_dtogo = child_dtogo - full_list_reduction;
             if(d < DEBUG_D) { PD(d); printf("                       raz - full list %d moves, child dtogo %d\n", n_moves, full_list_dtogo); }
 
             // Set deval2 to minimum infinity so that untraversed moves drop away on sort.
@@ -1409,7 +1409,7 @@ char Keys[1040];
             // Sort the moves again - best-first by reduced long-list search
             std::stable_sort(move_stack.moves+orig_msp, move_stack.moves+move_stack.msp, MoveAndEval::byEvalGt);
 
-            const int short_list_dtogo = dtogo - short_list_reduction;
+            const int short_list_dtogo = child_dtogo - short_list_reduction;
             if(d < DEBUG_D) { PD(d); printf("                       %d: raz - short list %d moves, child dtogo %d\n", d, short_list_len, short_list_dtogo); }
 
             alpha = orig_alpha;
