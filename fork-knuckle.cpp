@@ -1330,8 +1330,8 @@ char Keys[1040];
             std::stable_sort(move_stack.moves+orig_msp, move_stack.moves+move_stack.msp, MoveAndEval::bySevalGt);
 
             // Search at reduced depth to find a short-list of best moves
-            const int full_list_reduction  = d == 0 ? 1 : 2;
-            const int short_list_reduction = d == 0 ? 0 : 1;
+            const int full_list_reduction  = d == 0 ? 2 : 4;
+            const int short_list_reduction = d == 0 ? 0 : 2;
 #           define MAX_SHORTLIST_LEN 4
             const int short_list_len = std::min(MAX_SHORTLIST_LEN, n_moves);
             
