@@ -1309,10 +1309,6 @@ char Keys[1040];
         CheckData check_data;
         gen_moves_with_sevals(color, last_move, seval, check_data);
 
-        if(orig_msp == 68 && move_stack.msp == 1940) {
-            printf("                    !!!! BANG 68-1940 in razz !!!! \n");
-        }
-        
         // If there are no valid moves, then this is checkmate or stalemate - prefer shallower checkmates.
         if(move_stack.msp == orig_msp) {
             return NegamaxResult(check_data.in_check ? -CHECKMATE_EVAL + d/*checkmate*/ : 0/*stalemate*/);
@@ -1324,7 +1320,7 @@ char Keys[1040];
         int child_dtogo = dtogo-1;
 
         if(d < DEBUG_D) {
-            PD(d); printf("                       raz - %d moves, dtogo %d\n", n_moves, dtogo);
+            PD(d); printf("                       %d: raz - %d moves, dtogo %d\n", d, n_moves, dtogo);
         }
         
         // Sort the moves - best-first by static eval
@@ -1336,20 +1332,15 @@ char Keys[1040];
             const MoveUndoInfo undo_info = make_full_move(color, move);
             const int child_seval = move_stack.moves[i].seval;
 
-        if(orig_msp == 68 && move_stack.msp == 1940) {
-            printf("                    !!!! BANG 68-1940 in razz 2 !!!! \n");
-        }
-        
             if(d < DEBUG_D) {
-                PD(d); printf("                           %d: long %s-%s [%d,%d] seval %d ...\n", d, SQ(move.from()), SQ(move.to()), alpha, beta, child_seval);
-                PD(d); printf("                                 qsearch(%d, ..., %d, %d, %d, %d, %d)\n", child_color, -child_seval, -beta, -alpha);
+                PD(d); printf("                           %d: qsearch %s-%s [%7d,%7d] seval %4d ... ", d, SQ(move.from()), SQ(move.to()), alpha, beta, child_seval); fflush(stdout);
             }
                 
             clock_t t = clock();
             move_stack.moves[i].eval = -qsearch(child_color, move, -child_seval, d+1, -beta, -alpha);
 
             if(d < DEBUG_D) {
-                PD(d); printf("                           %d: ... %s-%s [%d,%d] seval %d qeval %d (%6.3f sec)\n", d, SQ(move.from()), SQ(move.to()), alpha, beta, move_stack.moves[i].seval, move_stack.moves[i].eval, (clock()-t)*(1.0/CLOCKS_PER_SEC));
+                PD(d); printf("qeval %4d (%6.3f sec)\n", move_stack.moves[i].eval, (clock()-t)*(1.0/CLOCKS_PER_SEC));
             }
             
             unmake_full_move(color, move, undo_info);
@@ -1372,12 +1363,12 @@ char Keys[1040];
             const int short_list_len = std::min(MAX_SHORTLIST_LEN, n_moves);
             
             const int full_list_dtogo = child_dtogo - full_list_reduction;
-            if(d < DEBUG_D) { PD(d); printf("                       raz - full list %d moves, child dtogo %d\n", n_moves, full_list_dtogo); }
+            if(d < DEBUG_D) { PD(d); printf("                       %d: raz - full list %d moves, child dtogo %d\n", d, n_moves, full_list_dtogo); }
 
             // Set move eval to minimum infinity so that untraversed moves drop away on sort.
-            for(int i = orig_msp; i < orig_msp + n_moves; i++) {
-                move_stack.moves[i].eval = MIN_EVAL;
-            }
+            // for(int i = orig_msp; i < orig_msp + n_moves; i++) {
+            //     move_stack.moves[i].eval = MIN_EVAL;
+            // }
                 
             int short_list_move_indexes[MAX_SHORTLIST_LEN];
             int worst_shortlist_eval = CHECKMATE_EVAL+1;
@@ -1402,8 +1393,7 @@ char Keys[1040];
                 const int child_seval = move_stack.moves[i].seval;
 
                 if(d < DEBUG_D) {
-                    PD(d); printf("                           %d: long %s-%s [%d,%d] seval %d ...\n", d, SQ(move.from()), SQ(move.to()), alpha, beta, child_seval);
-                    PD(d); printf("                                 negaraz(%d, ..., %d, %d, %d, %d, %d)\n", child_color, -child_seval, full_list_dtogo, d+1, -beta, -alpha);
+                    PD(d); printf("                           %d: long    %s-%s [%7d,%7d] seval %4d qeval %4d ... ", d, SQ(move.from()), SQ(move.to()), alpha, beta, child_seval, move_stack.moves[i].eval); fflush(stdout);
                 }
                 
                 clock_t t = clock();
@@ -1430,13 +1420,13 @@ char Keys[1040];
                             }
                         }
                         if(d < DEBUG_D) {
-                            PD(d); printf("                                 %d: %d'th worst move is now move %d - eval %d\n", d, short_list_len, short_list_move_indexes[worst_shortlist_index], worst_shortlist_eval);
+                            PD(d); printf("(%d'th worst move is now move %d - eval %d) ... ", short_list_len, short_list_move_indexes[worst_shortlist_index], worst_shortlist_eval);
                         }
                     }
                 }
 
                 if(d < DEBUG_D) {
-                    PD(d); printf("                           %d: ... %s-%s [%d,%d] seval %d eval %d depth %d (%6.3f sec)\n", d, SQ(move.from()), SQ(move.to()), alpha, beta, move_stack.moves[i].seval, move_stack.moves[i].eval, child_result.max_depth, (clock()-t)*(1.0/CLOCKS_PER_SEC));
+                    PD(d); printf("eval %4d depth %2d (%6.3f sec)\n", move_stack.moves[i].eval, child_result.max_depth, (clock()-t)*(1.0/CLOCKS_PER_SEC));
                 }
 
                 unmake_full_move(color, move, undo_info);
@@ -1456,20 +1446,13 @@ char Keys[1040];
                 const int child_seval = move_stack.moves[i].seval;
 
                 if(d < DEBUG_D) {
-                    PD(d); printf("                         %d: short %s-%s [%d,%d] seval %d eval %d ...\n", d, SQ(move.from()), SQ(move.to()), alpha, beta, child_seval, move_stack.moves[i].eval);
-                    PD(d); printf("                               negaraz(%d, ..., %d, %d, %d, %d, %d)\n", child_color, -child_seval, short_list_dtogo, d+1, -beta, -alpha);
+                    PD(d); printf("                           %d: short   %s-%s [%7d,%7d] seval %4d  eval %4d ... ", d, SQ(move.from()), SQ(move.to()), alpha, beta, child_seval, move_stack.moves[i].eval);
                 }
 
                 clock_t t = clock();
                 NegamaxResult child_result = negaraz(child_color, move, -child_seval, short_list_dtogo, d+1, -beta, -alpha);
             
-                if(d < DEBUG_D) {
-                    PD(d); printf("                         %d: ...  %s-%s seval %d eval %d depth %d, before merge best %s-%s eval %d (%6.3f sec)\n", d, SQ(move.from()), SQ(move.to()), child_seval, -child_result.eval, child_result.max_depth, SQ(result.best_move.from()), SQ(result.best_move.to()), result.eval, (clock()-t)*(1.0/CLOCKS_PER_SEC));
-                }
                 result.merge(child_result, move);
-                if(d < DEBUG_D) {
-                    PD(d); printf("                         %d: ...  %s-%s seval %d eval %d depth %d, after merge best %s-%s eval %d (%6.3f sec)\n", d, SQ(move.from()), SQ(move.to()), child_seval, -child_result.eval, child_result.max_depth, SQ(result.best_move.from()), SQ(result.best_move.to()), result.eval, (clock()-t)*(1.0/CLOCKS_PER_SEC));
-                }
                 
                 move_stack.moves[i].eval = -child_result.eval;
 
@@ -1484,7 +1467,7 @@ char Keys[1040];
                 }
             
                 if(d < DEBUG_D) {
-                    PD(d); printf("                         %d: ...  %s-%s seval %d eval %d depth %d, best %s-%s eval %d (%6.3f sec)\n", d, SQ(move.from()), SQ(move.to()), child_seval, move_stack.moves[i].eval, child_result.max_depth, SQ(result.best_move.from()), SQ(result.best_move.to()), result.eval, (clock()-t)*(1.0/CLOCKS_PER_SEC));
+                    PD(d); printf("eval %4d depth %2d, best %s-%s eval %4d (%6.3f sec)\n", move_stack.moves[i].eval, child_result.max_depth, SQ(result.best_move.from()), SQ(result.best_move.to()), result.eval, (clock()-t)*(1.0/CLOCKS_PER_SEC));
                 }
 
                 unmake_full_move(color, move, undo_info);
@@ -1779,7 +1762,7 @@ char Keys[1040];
             for(int j=0; j<10; j++) accept[j] = reject[j] = 0, ttt[j] = t;
             perft(color, last_move, i, 1);
             t = clock()-t;
-            printf("perft(%2d)= %12lld (%6.3f sec)\n", i, count, t*(1./CLOCKS_PER_SEC));
+            printf("perft(%2d)= %12ld (%6.3f sec)\n", i, count, t*(1./CLOCKS_PER_SEC));
             fflush(stdout);
         }
     }
