@@ -107,4 +107,8 @@ static const int CAS_MODE_Q   = CAS_MODE + LT+LT+LT+LT;
 
 static const int CHECKMATE_EVAL = 10000;
 
+// These limit values should never occur in a real eval, so they operate as +/- infinity.
+static const int MAX_EVAL = CHECKMATE_EVAL + 1;
+static const int MIN_EVAL = -MAX_EVAL;
+
 #endif //def PERFTCPP_HPP
