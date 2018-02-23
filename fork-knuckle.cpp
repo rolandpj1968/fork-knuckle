@@ -1296,9 +1296,33 @@ char Keys[1040];
         }
     };
 
-    const int DEBUG_D = 2;
+    const int DEBUG_D = 1;
 
     void PD(int d) { for(int i = 0; i < d; i++) { printf("    "); } }
+
+    // Sort the already-generated move-list by qeval.
+    void qsearch_and_sort(const int orig_msp, const int color, const int d) {
+        // Sort the moves - best-first by static eval
+        std::stable_sort(move_stack.moves+orig_msp, move_stack.moves+move_stack.msp, MoveAndEval::bySevalGt);
+
+        const int child_color = other_color(color);
+        
+        // Do q-search on all moves.
+        for(int i = orig_msp; i < move_stack.msp; i++) {
+            const Move move = move_stack.moves[i].move;
+            const MoveUndoInfo undo_info = make_full_move(color, move);
+            const int child_seval = move_stack.moves[i].seval;
+
+            clock_t t = clock();
+            //move_stack.moves[i].eval = -qsearch_negamax(child_color, move, -child_seval, d+1);
+            move_stack.moves[i].eval = -qsearch(child_color, move, -child_seval, d+1, MIN_EVAL, MAX_EVAL);
+
+            unmake_full_move(color, move, undo_info);
+        }
+        
+        // Sort the moves - best-first by q-eval
+        std::stable_sort(move_stack.moves+orig_msp, move_stack.moves+move_stack.msp, MoveAndEval::byEvalGt);
+    }
     
     // Mini-max
     // @return eval
@@ -1320,43 +1344,23 @@ char Keys[1040];
         int child_dtogo = dtogo-1;
 
         if(d < DEBUG_D) {
-            PD(d); printf("                       %d: max - %d moves, dtogo %d\n", d, n_moves, dtogo);
+            PD(d); printf("                       depth %d: negamaxmax - %d moves, dtogo %d:\n", d, n_moves, dtogo);
         }
-        
-        // Sort the moves - best-first by static eval
-        std::stable_sort(move_stack.moves+orig_msp, move_stack.moves+move_stack.msp, MoveAndEval::bySevalGt);
 
-        // Do q-search on all moves, and then sort again on qeval.
-        for(int i = orig_msp; i < move_stack.msp; i++) {
-            const Move move = move_stack.moves[i].move;
-            const MoveUndoInfo undo_info = make_full_move(color, move);
-            const int child_seval = move_stack.moves[i].seval;
-
-            if(d < DEBUG_D) {
-                PD(d); printf("                           %d: qsearch %s-%s seval %4d ... ", d, SQ(move.from()), SQ(move.to()), child_seval); fflush(stdout);
-            }
-                
-            clock_t t = clock();
-            move_stack.moves[i].eval = -qsearch_negamax(child_color, move, -child_seval, d+1);
-
-            if(d < DEBUG_D) {
-                PD(d); printf("qeval %4d (%6.3f sec)\n", move_stack.moves[i].eval, (clock()-t)*(1.0/CLOCKS_PER_SEC));
-            }
-            
-            unmake_full_move(color, move, undo_info);
-        }
-        
-        // Sort the moves - best-first by q-eval
-        std::stable_sort(move_stack.moves+orig_msp, move_stack.moves+move_stack.msp, MoveAndEval::byEvalGt);
+        qsearch_and_sort(orig_msp, color, d);
         
         NegamaxResult result(MIN_EVAL);
 
-        if(child_dtogo <= 0) {
+        if(child_dtogo <= 1) {
             // Return the best q-eval move
             result.merge(NegamaxResult(-move_stack.moves[orig_msp].eval), move_stack.moves[orig_msp].move);
         } else {
             const int child_color = other_color(color);
             
+            // if(d < DEBUG_D) {
+            //     PD(d); printf("                       depth %d: negamaxmax - %d moves, dtogo %d eval:\n", d, n_moves, dtogo);
+            // }
+        
             for(int i = orig_msp; i < move_stack.msp; i++) {
                 const Move move = move_stack.moves[i].move;
                 const MoveUndoInfo undo_info = make_full_move(color, move);
