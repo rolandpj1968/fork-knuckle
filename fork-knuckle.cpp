@@ -1296,9 +1296,96 @@ char Keys[1040];
         }
     };
 
-    const int DEBUG_D = 1;
+    const int DEBUG_D = 2;
 
     void PD(int d) { for(int i = 0; i < d; i++) { printf("    "); } }
+    
+    // Mini-max
+    // @return eval
+    NegamaxResult negamax(const int color, const Move last_move, const int seval, const int dtogo, const int d) {
+        // Save state.
+        const int orig_msp = move_stack.msp;
+
+        CheckData check_data;
+        gen_moves_with_sevals(color, last_move, seval, check_data);
+
+        // If there are no valid moves, then this is checkmate or stalemate - prefer shallower checkmates.
+        if(move_stack.msp == orig_msp) {
+            return NegamaxResult(check_data.in_check ? -CHECKMATE_EVAL + d/*checkmate*/ : 0/*stalemate*/);
+        }
+
+        const int n_moves = move_stack.msp - orig_msp;
+        const int child_color = other_color(color);
+
+        int child_dtogo = dtogo-1;
+
+        if(d < DEBUG_D) {
+            PD(d); printf("                       %d: max - %d moves, dtogo %d\n", d, n_moves, dtogo);
+        }
+        
+        // Sort the moves - best-first by static eval
+        std::stable_sort(move_stack.moves+orig_msp, move_stack.moves+move_stack.msp, MoveAndEval::bySevalGt);
+
+        // Do q-search on all moves, and then sort again on qeval.
+        for(int i = orig_msp; i < move_stack.msp; i++) {
+            const Move move = move_stack.moves[i].move;
+            const MoveUndoInfo undo_info = make_full_move(color, move);
+            const int child_seval = move_stack.moves[i].seval;
+
+            if(d < DEBUG_D) {
+                PD(d); printf("                           %d: qsearch %s-%s seval %4d ... ", d, SQ(move.from()), SQ(move.to()), child_seval); fflush(stdout);
+            }
+                
+            clock_t t = clock();
+            move_stack.moves[i].eval = -qsearch_negamax(child_color, move, -child_seval, d+1);
+
+            if(d < DEBUG_D) {
+                PD(d); printf("qeval %4d (%6.3f sec)\n", move_stack.moves[i].eval, (clock()-t)*(1.0/CLOCKS_PER_SEC));
+            }
+            
+            unmake_full_move(color, move, undo_info);
+        }
+        
+        // Sort the moves - best-first by q-eval
+        std::stable_sort(move_stack.moves+orig_msp, move_stack.moves+move_stack.msp, MoveAndEval::byEvalGt);
+        
+        NegamaxResult result(MIN_EVAL);
+
+        if(child_dtogo <= 0) {
+            // Return the best q-eval move
+            result.merge(NegamaxResult(-move_stack.moves[orig_msp].eval), move_stack.moves[orig_msp].move);
+        } else {
+            const int child_color = other_color(color);
+            
+            for(int i = orig_msp; i < move_stack.msp; i++) {
+                const Move move = move_stack.moves[i].move;
+                const MoveUndoInfo undo_info = make_full_move(color, move);
+                const int child_seval = move_stack.moves[i].seval;
+                
+                if(d < DEBUG_D) {
+                    PD(d); printf("                           %d: %s-%s seval %4d qeval %4d ... ", d, SQ(move.from()), SQ(move.to()), child_seval, move_stack.moves[i].eval); fflush(stdout);
+                }
+                
+                clock_t t = clock();
+                NegamaxResult child_result = negamax(child_color, move, -child_seval, child_dtogo, d+1);
+                
+                int child_eval = -child_result.eval;
+                move_stack.moves[i].eval = child_eval;
+                
+                if(d < DEBUG_D) {
+                    PD(d); printf("eval %4d depth %2d (%6.3f sec)\n", move_stack.moves[i].eval, child_result.max_depth, (clock()-t)*(1.0/CLOCKS_PER_SEC));
+                }
+                
+                result.merge(child_result, move);
+                
+                unmake_full_move(color, move, undo_info);
+            }
+        }
+            
+        move_stack.pop_to(orig_msp); // discard moves
+
+        return result;
+    }
     
     // Razoring, aka late-move-reduction (LMR) by effort.
     // @return eval
@@ -1510,6 +1597,62 @@ char Keys[1040];
     
     // Quiescence search.
     // @return eval
+    int16_t qsearch_negamax(const int color, const Move last_move, const int seval, const int d) {
+
+        // Save state.
+        const int orig_msp = move_stack.msp;
+
+        CheckData check_data;
+        gen_moves_with_sevals(color, last_move, seval, check_data);
+
+        // If there are no valid moves, then this is checkmate or stalemate.
+        // (I am not 100% sure we want to do this in q-search?)
+        if(move_stack.msp == orig_msp) {
+            return check_data.in_check ? -CHECKMATE_EVAL + d/*checkmate*/ : 0/*stalemate*/;
+        }
+
+        // We are only interested in noisy moves if their line is better than this static position.
+        // But if we're in check, then we MUST play a move.
+        int16_t best_qeval = seval;
+
+        if(check_data.in_check) {
+            best_qeval = MIN_EVAL;
+        }
+        
+        int n_moves = move_stack.msp - orig_msp;
+
+        // Sort the moves - best-first by static eval
+        std::stable_sort(move_stack.moves+orig_msp, move_stack.moves+move_stack.msp, MoveAndEval::bySevalGt);
+
+        const int child_color = other_color(color);
+
+        for(int i = orig_msp; i < orig_msp + n_moves; i++) {
+            const int move_index = i - orig_msp;
+
+            // If we're in check then we need to explore all escapes. Otherwise only noisy moves.
+            // TODO - noisy moves are currently only captures and promos - need to add checks
+            const Move move = move_stack.moves[i].move;
+            if(check_data.in_check || move.is_noisy()) {
+                const MoveUndoInfo undo_info = make_full_move(color, move);
+                const int child_seval = move_stack.moves[i].seval;
+                
+                int16_t child_qeval = -qsearch_negamax(child_color, move, -child_seval, d+1);
+                
+                unmake_full_move(color, move, undo_info);
+                
+                if(best_qeval < child_qeval) {
+                    best_qeval = child_qeval;
+                }
+            }
+        }
+        
+        move_stack.pop_to(orig_msp); // Discard moves
+
+        return best_qeval;
+    }
+    
+    // Quiescence search.
+    // @return eval
     int16_t qsearch(const int color, const Move last_move, const int seval, const int d, int alpha, int beta) {
 
         // Save state.
@@ -1708,7 +1851,8 @@ char Keys[1040];
             
             const int eval = full_eval(color);
 
-            NegamaxResult result = negaraz(color, last_move, eval, depth, 0/*root*/, -100000, 100000); // Note - depth here is really effort!
+            NegamaxResult result = negamax(color, last_move, eval, depth, 0/*root*/);
+            //NegamaxResult result = negaraz(color, last_move, eval, depth, 0/*root*/, MIN_EVAL, MAX_EVAL);
             
             // No legal move - checkmate or stalemate
             if(result.best_move.is_empty()) {
