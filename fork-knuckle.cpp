@@ -1339,7 +1339,6 @@ char Keys[1040];
         }
 
         const int n_moves = move_stack.msp - orig_msp;
-        const int child_color = other_color(color);
 
         int child_dtogo = dtogo-1;
 
@@ -1391,9 +1390,79 @@ char Keys[1040];
         return result;
     }
     
+    // Mini-max with alpha-beta pruning
+    // @return eval
+    NegamaxResult negamab(const int color, const Move last_move, const int seval, const int dtogo, const int d, int16_t alpha, const int16_t beta) {
+        // Save state.
+        const int orig_msp = move_stack.msp;
+
+        CheckData check_data;
+        gen_moves_with_sevals(color, last_move, seval, check_data);
+
+        // If there are no valid moves, then this is checkmate or stalemate - prefer shallower checkmates.
+        if(move_stack.msp == orig_msp) {
+            return NegamaxResult(check_data.in_check ? -CHECKMATE_EVAL + d/*checkmate*/ : 0/*stalemate*/);
+        }
+
+        const int n_moves = move_stack.msp - orig_msp;
+
+        int child_dtogo = dtogo-1;
+
+        if(d < DEBUG_D) {
+            PD(d); printf("                       depth %d: negamaxmax - %d moves, dtogo %d:\n", d, n_moves, dtogo);
+        }
+
+        qsearch_and_sort(orig_msp, color, d);
+        
+        NegamaxResult result(MIN_EVAL);
+
+        if(child_dtogo <= 1) {
+            // Return the best q-eval move
+            result.merge(NegamaxResult(-move_stack.moves[orig_msp].eval), move_stack.moves[orig_msp].move);
+        } else {
+            const int child_color = other_color(color);
+            
+            // if(d < DEBUG_D) {
+            //     PD(d); printf("                       depth %d: negamaxmax - %d moves, dtogo %d eval:\n", d, n_moves, dtogo);
+            // }
+        
+            for(int i = orig_msp; i < move_stack.msp && alpha <= beta; i++) {
+                const Move move = move_stack.moves[i].move;
+                const MoveUndoInfo undo_info = make_full_move(color, move);
+                const int child_seval = move_stack.moves[i].seval;
+                
+                if(d < DEBUG_D) {
+                    PD(d); printf("                           %d: %s-%s seval %4d qeval %4d ... ", d, SQ(move.from()), SQ(move.to()), child_seval, move_stack.moves[i].eval); fflush(stdout);
+                }
+                
+                clock_t t = clock();
+                NegamaxResult child_result = negamab(child_color, move, -child_seval, child_dtogo, d+1, -beta, -alpha);
+                
+                int child_eval = -child_result.eval;
+                move_stack.moves[i].eval = child_eval;
+                
+                if(d < DEBUG_D) {
+                    PD(d); printf("eval %4d depth %2d (%6.3f sec)\n", move_stack.moves[i].eval, child_result.max_depth, (clock()-t)*(1.0/CLOCKS_PER_SEC));
+                }
+                
+                result.merge(child_result, move);
+                const int16_t best_eval = result.eval;
+                if(alpha < best_eval) {
+                    alpha = best_eval;
+                }
+                
+                unmake_full_move(color, move, undo_info);
+            }
+        }
+            
+        move_stack.pop_to(orig_msp); // discard moves
+
+        return result;
+    }
+    
     // Razoring, aka late-move-reduction (LMR) by effort.
     // @return eval
-    NegamaxResult negaraz(const int color, const Move last_move, const int seval, const int dtogo, const int d, int alpha, int beta) {
+    NegamaxResult negaraz(const int color, const Move last_move, const int seval, const int dtogo, const int d, int16_t alpha, const int16_t beta) {
         // Save state.
         const int orig_msp = move_stack.msp;
 
@@ -1657,7 +1726,7 @@ char Keys[1040];
     
     // Quiescence search.
     // @return eval
-    int16_t qsearch(const int color, const Move last_move, const int seval, const int d, int alpha, int beta) {
+    int16_t qsearch(const int color, const Move last_move, const int seval, const int d, int16_t alpha, const int16_t beta) {
 
         // Save state.
         const int orig_msp = move_stack.msp;
@@ -1855,7 +1924,8 @@ char Keys[1040];
             
             const int eval = full_eval(color);
 
-            NegamaxResult result = negamax(color, last_move, eval, depth, 0/*root*/);
+            //NegamaxResult result = negamax(color, last_move, eval, depth, 0/*root*/);
+            NegamaxResult result = negamab(color, last_move, eval, depth, 0/*root*/, MIN_EVAL, MAX_EVAL);
             //NegamaxResult result = negaraz(color, last_move, eval, depth, 0/*root*/, MIN_EVAL, MAX_EVAL);
             
             // No legal move - checkmate or stalemate
