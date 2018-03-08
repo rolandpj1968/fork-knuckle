@@ -1,5 +1,4 @@
 #include <algorithm>
-//#include <functional>
 
 #include <time.h>
 #include <stdio.h>
@@ -48,15 +47,36 @@ union _bucket
   } s;
 } *Hash, ExtraHash[XSIZE];
 
-struct P {
-    
-int rseed = 87105015;
-    uint64_t accept[30], reject[30], hit[30], miss[30];
-char *Zob[2*NPCE];
+const int QSEARCH_HASHTABLE_ORDER = 15;
+const size_t QSEARCH_HASHTABLE_NENTRIES = 1 << QSEARCH_HASHTABLE_ORDER;
+const size_t QSEARCH_HASHTABLE_MASK = QSEARCH_HASHTABLE_ORDER-1;
 
-    // Zobrist key for given piece and pos.
-    int64_t Zobrist(const int piece, const int pos) const { return *(int64_t *)(Zob[piece-WHITE] + pos); }
-    
+struct QSearchHashEntry {
+    uint64_t zobrist_key1;
+    uint64_t zobrist_key2;
+    uint32_t n_qs_nodes;
+    uint16_t max_qs_depth_delta;
+    int16_t q_eval;
+};
+
+struct P {
+
+    // Random seeds for Zobrist keys - only used from offset 128 upwards.
+    uint8_t random_seed[1040];
+    // Base index into the random_seed for each piece.
+    uint8_t *piece_pos_seeds[2*NPCE];
+
+    // Zobrist keys - two of them for good luck.
+    uint64_t zobrist_key1 = 8729767686LL;
+    uint64_t zobrist_key2 = 1234567890LL;
+        
+    // Zobrist value for given piece and pos.
+    int64_t zobrist_value(const int piece, const int pos) const { return *(int64_t *)(piece_pos_seeds[piece-WHITE] + pos); }
+
+    QSearchHashEntry* qsearch_hashtable = (QSearchHashEntry*) calloc(QSEARCH_HASHTABLE_NENTRIES, sizeof(QSearchHashEntry));
+
+    uint64_t accept[30], reject[30], hit[30], miss[30];
+
     unsigned char
         pc[NPCE*4+1], /* piece list, equivalenced with various piece info  */
         brd[0xBC+2*0xEF+1],      /* contains play board and 2 delta boards  */
@@ -81,8 +101,6 @@ char *Zob[2*NPCE];
     char          *const delta_vec  = ((char *) brd+1+0xBC+0xEF+0x77); /* step to bridge certain vector */
 
     char noUnder = 0; // Non-zero to fobid under-promotions.
-
-char Keys[1040];
 
     struct Move {
         // Move in uint32 representation:
@@ -151,7 +169,7 @@ char Keys[1040];
         // int16_t eval_deltas[2048];
         int msp = 0;
 
-        void check(const int i) const { if(msp < 0 || 2048 <= msp) { printf("\nBOOOOOOOOM!\n\n"); exit(1); } }
+        void check(const int i) const { if(i < 0 || 2048 <= i) { printf("\nBOOOOOOOOM!\n\n"); exit(1); } }
         void check() const { check(msp); }
         
         void push(const MoveAndEval move) { moves[msp++] = move; }
@@ -170,9 +188,9 @@ char Keys[1040];
 
     // Search function stats
     uint64_t n_nodes;
-    int max_depth;
+    uint16_t max_depth;
     uint64_t n_qs_nodes;
-    int max_qs_depth;
+    uint16_t max_qs_depth;
 
     void reset_stats() {
         n_nodes = 0; max_depth = 0; n_qs_nodes = 0; max_qs_depth = 0;
@@ -181,7 +199,7 @@ char Keys[1040];
     Move path[100];
 
     int epSqr, HashSize, HashSection;
-    uint64_t HashKey=8729767686LL, HighKey=1234567890LL, count, epcnt, xcnt, ckcnt, cascnt, promcnt;
+    uint64_t count, epcnt, xcnt, ckcnt, cascnt, promcnt;
     //FILE *f;
     clock_t ttt[30];
 
@@ -228,7 +246,7 @@ char Keys[1040];
     }
 
     // Initialize piece list to starting position.
-    // Not uses cos we always supply FEN, but missing Zob init?
+    // Not used cos we always supply FEN, but missing piece_pos_seeds init?
     void piece_init(void) {
 
         // Piece kind and position
@@ -266,8 +284,8 @@ char Keys[1040];
         first_slider_piece[BLACK] = QUEEN_INDEX + BLACK;
         first_pawn_piece[BLACK]   = PAWNS_INDEX + BLACK;
 
-        // Why isn't Zob initialised for all pieces - ah, it's initialised from FEN parsing, always.
-        Zob[DUMMY-WHITE] = Keys-0x22;
+        // Why isn't piece_pos_seeds initialised for all pieces - ah, it's initialised from FEN parsing, always.
+        piece_pos_seeds[DUMMY-WHITE] = random_seed-0x22;
     }
 
     /**
@@ -397,7 +415,7 @@ char Keys[1040];
                     piece_to_pos[piece] = ((file +  16*row) & 0x77) + 0x22;
                     piece_to_kind[piece] = piece_kind;
                     piece_to_capt_code[piece] = KIND_TO_CAPT_CODE[piece_kind];
-                    Zob[piece-WHITE]  = Keys + 128*piece_kind + (color&BLACK)/8 - 0x22;
+                    piece_pos_seeds[piece-WHITE]  = random_seed + 128*piece_kind + (color&BLACK)/8 - 0x22;
                     piece_to_cstl[piece] = cc;
                     CasRights |= cc;       /* remember K & R on original location */
                     file++;
@@ -1043,8 +1061,8 @@ char Keys[1040];
     }
 
     void update_hash_key(const int piece, const int pos) { 
-        HashKey ^= Zobrist(piece, pos);
-        HighKey ^= Zobrist(piece, pos+8);
+        zobrist_key1 ^= zobrist_value(piece, pos);
+        zobrist_key2 ^= zobrist_value(piece, pos+8);
     }
 
     void update_hash_key_for_promo(const int piece, const int newpiece, const int pos) {
@@ -1074,27 +1092,27 @@ char Keys[1040];
                     if(depth > 9) {
                         int i = HashSection, j = depth-9;
                         while(j--) i >>= 1;
-                        Bucket =      Hash + ((Index + (int)HashKey) & i) + 7 * HashSection + i;
+                        Bucket =      Hash + ((Index + (int)zobrist_key1) & i) + 7 * HashSection + i;
                     } else
-                        Bucket =      Hash + ((Index + (int)HashKey) & HashSection) + (depth-3) * HashSection;
-                    if(Bucket->l.Signature1 == HighKey && Bucket->l.Signature2 == HashKey)
+                        Bucket =      Hash + ((Index + (int)zobrist_key1) & HashSection) + (depth-3) * HashSection;
+                    if(Bucket->l.Signature1 == zobrist_key2 && Bucket->l.Signature2 == zobrist_key1)
                     {   count += Bucket->l.longCount; accept[depth]++;
                         cache_hit = true; return Bucket;
                     }
                     reject[depth]++;
                     cache_hit = false; return Bucket;
                 }
-                Bucket =      Hash + ((Index + (int)HashKey) & HashSection) + (depth-3) * HashSection;
-            } else Bucket = ExtraHash + ((Index + (int)HashKey) & (XSIZE-1));
+                Bucket =      Hash + ((Index + (int)zobrist_key1) & HashSection) + (depth-3) * HashSection;
+            } else Bucket = ExtraHash + ((Index + (int)zobrist_key1) & (XSIZE-1));
 
-            store = (HashKey>>32) & 1;
-            if(Bucket->s.Signature[store] == HighKey && (Bucket->s.Extension[store] ^ (HashKey>>32)) < 2)
+            store = (zobrist_key1>>32) & 1;
+            if(Bucket->s.Signature[store] == zobrist_key2 && (Bucket->s.Extension[store] ^ (zobrist_key1>>32)) < 2)
             {   count += Bucket->s.Count[store]; accept[depth]++;
                 Bucket->s.Extension[store] &= ~1;
                 Bucket->s.Extension[store^1] |= 1;
                 cache_hit = true; return Bucket;
             }
-            if(Bucket->s.Signature[store^1] == HighKey && (Bucket->s.Extension[store^1] ^ (HashKey>>32)) < 2)
+            if(Bucket->s.Signature[store^1] == zobrist_key2 && (Bucket->s.Extension[store^1] ^ (zobrist_key1>>32)) < 2)
             {   count += Bucket->s.Count[store^1]; accept[depth]++;
                 Bucket->s.Extension[store^1] &= ~1;
                 Bucket->s.Extension[store] |= 1;
@@ -1109,18 +1127,18 @@ char Keys[1040];
     void hash_update(const int depth, union _bucket *const Bucket, const int store, const uint64_t count) {
         if(HashFlag) {
             if(true/*change to || for large entries only ->*/ && depth > 7) { //large entry
-                Bucket->l.Signature1 = HighKey;
-                Bucket->l.Signature2 = HashKey;
+                Bucket->l.Signature1 = zobrist_key2;
+                Bucket->l.Signature2 = zobrist_key1;
                 Bucket->l.longCount  = count;
             } else { // packed entry
-                Bucket->s.Signature[store] = HighKey;
-                Bucket->s.Extension[store] = (HashKey>>32) & ~1; // erase low bit
+                Bucket->s.Signature[store] = zobrist_key2;
+                Bucket->s.Extension[store] = (zobrist_key1>>32) & ~1; // erase low bit
                 Bucket->s.Count[store]     = count;
             }
         }
     }
     
-    void prepare_special_moves(const int color, const Move move, int& piece, int& capt_pos, int& Index) {
+    void prepare_special_moves(const int color, const Move move, int& piece, int& capt_pos, int& hash_offset) {
         const int from = move.from(), to = move.to(), mode = move.mode();
 
         // Check for special moves.
@@ -1129,7 +1147,7 @@ char Keys[1040];
                 // 2-square pawn move - change the hash if en-passant is possible.
                 if(((board[to+RT]^piece) & (COLOR|PAWNS_INDEX)) == COLOR ||
                    ((board[to+LT]^piece) & (COLOR|PAWNS_INDEX)) == COLOR)
-                    Index = mode * 76265;
+                    hash_offset = mode * 76265;
             } else if(mode == EP_MODE) {
                 // En-passant capture - capture square is not the same as the to square.
                 capt_pos ^= 0x10;
@@ -1148,9 +1166,9 @@ char Keys[1040];
                 piece_to_pos[piece]  = from;
                 piece_to_kind[piece] = promo_kind;
                 piece_to_capt_code[piece] = KIND_TO_CAPT_CODE[promo_kind];
-                Zob[piece-WHITE]  = Keys + 128*promo_kind + (color&BLACK)/8 - 0x22;
+                piece_pos_seeds[piece-WHITE]  = random_seed + 128*promo_kind + (color&BLACK)/8 - 0x22;
                 update_hash_key_for_promo(orig_piece, piece, from);
-                Index += 14457159; // Prevent clash with non-promotion moves.
+                hash_offset += 14457159; // Prevent clash with non-promotion moves.
             } else {
                 // Castling - determine Rook move.
                 const int rook_from = mode - CAS_MODE + from;
@@ -1211,23 +1229,26 @@ char Keys[1040];
         int piece, orig_piece;
         int capt_pos, capt_piece;
         uint8_t orig_cas_rights;
+        int hash_offset; // Not really undo information - rather hash key offset due to special moves (promo/castle).
     };
 
     // Do a full move including special move handling
     MoveUndoInfo make_full_move(const int color, const Move move) {
         const int from = move.from(), to = move.to(), mode = move.mode();
         
-        MoveUndoInfo undo_info; undo_info.piece = undo_info.orig_piece = board[from]; undo_info.capt_pos = to;
+        MoveUndoInfo undo_info; undo_info.piece = undo_info.orig_piece = board[from]; undo_info.capt_pos = to; undo_info.hash_offset = 0;
 
-        int Index; // unused
         // Special handling for castling, en-passant and promotion.
-        prepare_special_moves(color, move, undo_info.piece, undo_info.capt_pos, Index);
+        prepare_special_moves(color, move, undo_info.piece, undo_info.capt_pos, undo_info.hash_offset);
         
         undo_info.capt_piece = board[undo_info.capt_pos];
 
         undo_info.orig_cas_rights = CasRights;
         CasRights |= piece_to_cstl[undo_info.piece] | piece_to_cstl[undo_info.capt_piece];
-        
+
+        update_hash_key_for_move(undo_info.piece, from, to, undo_info.capt_piece, undo_info.capt_pos);
+        undo_info.hash_offset += (CasRights << 4) + color*919581;
+
         make_move(undo_info.piece, from, to, undo_info.capt_piece, undo_info.capt_pos);
 
         return undo_info;
@@ -1353,6 +1374,9 @@ char Keys[1040];
         } else {
             const int child_color = other_color(color);
             
+            const uint64_t orig_zobrist_key1 = zobrist_key1;
+            const uint64_t orig_zobrist_key2 = zobrist_key2;
+
             for(int i = orig_msp; i < move_stack.msp; i++) {
                 const Move move = move_stack.moves[i].move;
                 const MoveUndoInfo undo_info = make_full_move(color, move);
@@ -1377,6 +1401,9 @@ char Keys[1040];
                 }
                 
                 unmake_full_move(color, move, undo_info);
+
+                zobrist_key1 = orig_zobrist_key1;
+                zobrist_key2 = orig_zobrist_key2;
             }
         }
             
@@ -1425,6 +1452,9 @@ char Keys[1040];
         } else {
             const int child_color = other_color(color);
             
+            const uint64_t orig_zobrist_key1 = zobrist_key1;
+            const uint64_t orig_zobrist_key2 = zobrist_key2;
+
             // if(d < DEBUG_D) {
             //     PD(d); printf("                       depth %d: negamaxmax - %d moves, dtogo %d eval:\n", d, n_moves, dtogo);
             // }
@@ -1457,6 +1487,9 @@ char Keys[1040];
                 }
                 
                 unmake_full_move(color, move, undo_info);
+
+                zobrist_key1 = orig_zobrist_key1;
+                zobrist_key2 = orig_zobrist_key2;
             }
         }
             
@@ -1498,6 +1531,9 @@ char Keys[1040];
         // Sort the moves - best-first by static eval
         std::stable_sort(move_stack.moves+orig_msp, move_stack.moves+move_stack.msp, MoveAndEval::bySevalGt);
 
+        const uint64_t orig_zobrist_key1 = zobrist_key1;
+        const uint64_t orig_zobrist_key2 = zobrist_key2;
+
         const int child_color = other_color(color);
 
         for(int i = orig_msp; i < orig_msp + n_moves; i++) {
@@ -1514,6 +1550,9 @@ char Keys[1040];
                 
                 unmake_full_move(color, move, undo_info);
                 
+                zobrist_key1 = orig_zobrist_key1;
+                zobrist_key2 = orig_zobrist_key2;
+        
                 if(best_qeval < child_qeval) {
                     best_qeval = child_qeval;
                 }
@@ -1562,6 +1601,9 @@ char Keys[1040];
         // Sort the moves - best-first by static eval
         std::stable_sort(move_stack.moves+orig_msp, move_stack.moves+move_stack.msp, MoveAndEval::bySevalGt);
 
+        const uint64_t orig_zobrist_key1 = zobrist_key1;
+        const uint64_t orig_zobrist_key2 = zobrist_key2;
+
         const int child_color = other_color(color);
 
         for(int i = orig_msp; i < orig_msp + n_moves && alpha <= beta; i++) {
@@ -1578,6 +1620,9 @@ char Keys[1040];
                 
                 unmake_full_move(color, move, undo_info);
                 
+                zobrist_key1 = orig_zobrist_key1;
+                zobrist_key2 = orig_zobrist_key2;
+        
                 if(best_qeval < child_qeval) {
                     best_qeval = child_qeval;
                     if(alpha < best_qeval) {
@@ -1596,7 +1641,7 @@ char Keys[1040];
     void perft(const int color, const Move last_move, const int depth, const int d) {
         // Save state.
         int SavRights = CasRights;
-        uint64_t OldKey = HashKey, OldHKey = HighKey;
+        uint64_t OldKey = zobrist_key1, OldHKey = zobrist_key2;
 
         TIME(17);
 
@@ -1628,10 +1673,10 @@ char Keys[1040];
 
             path[d] = move_stack.moves[i].move;
 
-            int Index = 0;
+            int hash_offset = 0;
 
             // Special handling for castling, en-passant and promotion.
-            prepare_special_moves(color, move, piece, capt_pos, Index);
+            prepare_special_moves(color, move, piece, capt_pos, hash_offset);
 
             const int capt_piece = board[capt_pos];
 
@@ -1641,7 +1686,7 @@ char Keys[1040];
             bool cache_hit = false; int store = 0;
 
             // This updates the count as a side-effect on a cache hit.
-            union _bucket *Bucket = hash_lookup(color, depth, piece, from, to, capt_piece, capt_pos, Index, cache_hit, store);
+            union _bucket *Bucket = hash_lookup(color, depth, piece, from, to, capt_piece, capt_pos, hash_offset, cache_hit, store);
 
             // If we didn't find a cached value in the hash then we have to do the hard yards.
             if(!cache_hit) {
@@ -1667,7 +1712,7 @@ char Keys[1040];
             undo_special_moves(color, move, piece, orig_piece);
 
             // Restore state prior to move
-            HashKey = OldKey; HighKey = OldHKey; CasRights = SavRights;
+            zobrist_key1 = OldKey; zobrist_key2 = OldHKey; CasRights = SavRights;
         }
 
         move_stack.pop_to(orig_msp); /* throw away moves */
@@ -1749,8 +1794,8 @@ char Keys[1040];
             const int from = best_move.from(), to = best_move.to(), mode = best_move.mode();
             int piece = board[from];
             int capt_pos = to;
-            int Index; // ignore
-            prepare_special_moves(color, best_move, piece, capt_pos, Index);
+            int hash_offset; // ignored here
+            prepare_special_moves(color, best_move, piece, capt_pos, hash_offset);
             const int capt_piece = board[capt_pos];
             CasRights |= piece_to_cstl[piece] | piece_to_cstl[capt_piece];
             make_move(piece, from, to, capt_piece, capt_pos);
@@ -1799,7 +1844,9 @@ char Keys[1040];
         Hash = (union _bucket *) (((uint64_t)Hash + 63) & ~63);
         printf("Hash-table size = %x, Starts at %lx,section = %x\n", HashSize+1, (long)Hash, HashSection);
         HashFlag++;
-        for(int i=128; i<1040; i++) Keys[i] = rand()>>6;
+        for(int i = 128; i < 1040; i++) {
+            random_seed[i] = rand()>>6;
+        }
     }
 
     // @return color
