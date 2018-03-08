@@ -1564,24 +1564,27 @@ char Keys[1040];
 
         const int child_color = other_color(color);
 
-        for(int i = orig_msp; i < orig_msp + n_moves && alpha <= beta; i++) {
-            const int move_index = i - orig_msp;
-
-            // If we're in check then we need to explore all escapes. Otherwise only noisy moves.
-            // TODO - noisy moves are currently only captures and promos - need to add checks
-            const Move move = move_stack.moves[i].move;
-            if(check_data.in_check || move.is_noisy()) {
-                const MoveUndoInfo undo_info = make_full_move(color, move);
-                const int child_seval = move_stack.moves[i].seval;
+        // 'Stand-pat' check - if static eval is already beta then we can prune.
+        if(best_qeval < beta) {
+            for(int i = orig_msp; i < orig_msp + n_moves && alpha <= beta; i++) {
+                const int move_index = i - orig_msp;
                 
-                int16_t child_qeval = -qsearch(child_color, move, -child_seval, d+1, -beta, -alpha);
-                
-                unmake_full_move(color, move, undo_info);
-                
-                if(best_qeval < child_qeval) {
-                    best_qeval = child_qeval;
-                    if(alpha < best_qeval) {
-                        alpha = best_qeval;
+                // If we're in check then we need to explore all escapes. Otherwise only noisy moves.
+                // TODO - noisy moves are currently only captures and promos - need to add checks
+                const Move move = move_stack.moves[i].move;
+                if(check_data.in_check || move.is_noisy()) {
+                    const MoveUndoInfo undo_info = make_full_move(color, move);
+                    const int child_seval = move_stack.moves[i].seval;
+                    
+                    int16_t child_qeval = -qsearch(child_color, move, -child_seval, d+1, -beta, -alpha);
+                    
+                    unmake_full_move(color, move, undo_info);
+                    
+                    if(best_qeval < child_qeval) {
+                        best_qeval = child_qeval;
+                        if(alpha < best_qeval) {
+                            alpha = best_qeval;
+                        }
                     }
                 }
             }
