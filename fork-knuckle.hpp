@@ -1,5 +1,5 @@
-#ifndef PERFTCPP_HPP
-#define PERFTCPP_HPP
+#ifndef FORK_KNUCKLE_HPP
+#define FORK_KNUCKLE_HPP
 
 // Capture codes
 static const int C_ORTH =    1;
@@ -107,4 +107,4 @@ static const int CAS_MODE_Q   = CAS_MODE + LT+LT+LT+LT;
 
 static const int CHECKMATE_EVAL = 10000;
 
-#endif //def PERFTCPP_HPP
+#endif //def FORK_KNUCKLE_HPP
