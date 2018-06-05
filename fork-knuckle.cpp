@@ -19,8 +19,10 @@ using namespace SunfishEvalTables;
 /* Move generator based on separate Slider/Leaper/Pawn tables .            */
 /***************************************************************************/
 
-#define XSIZE (8*1024)
-union _bucket
+//struct PerftTTable {
+    //#define XSIZE (8*1024)
+static const int XSIZE = 8*1024;
+    union _bucket
 {
   struct { // one 32-byte entry
       uint64_t Signature1;
@@ -34,6 +36,15 @@ union _bucket
     unsigned int Extension[2];
   } s;
 } *Hash, ExtraHash[XSIZE];
+
+//} perft_ttable;
+
+struct HashAndHiKey {
+    uint64_t key;
+    uint64_t hi;
+
+    HashAndHiKey(): key(8729767686LL), hi(1234567890LL) {}
+};
 
 struct P {
     
@@ -76,7 +87,8 @@ char Keys[1040];
     Move path[100];
 
     int epSqr, HashSize, HashSection;
-    uint64_t HashKey=8729767686LL, HighKey=1234567890LL, count, epcnt, xcnt, ckcnt, cascnt, promcnt;
+    HashAndHiKey hash_key;
+    uint64_t count, epcnt, xcnt, ckcnt, cascnt, promcnt;
     //FILE *f;
     clock_t ttt[30];
 
@@ -929,8 +941,8 @@ char Keys[1040];
     }
 
     void update_hash_key(const int piece, const int pos) { 
-        HashKey ^= Zobrist(piece, pos);
-        HighKey ^= Zobrist(piece, pos+8);
+        hash_key.key ^= Zobrist(piece, pos);
+        hash_key.hi ^= Zobrist(piece, pos+8);
     }
 
     void update_hash_key_for_promo(const int piece, const int newpiece, const int pos) {
@@ -960,27 +972,27 @@ char Keys[1040];
                     if(depth > 9) {
                         int i = HashSection, j = depth-9;
                         while(j--) i >>= 1;
-                        Bucket =      Hash + ((Index + (int)HashKey) & i) + 7 * HashSection + i;
+                        Bucket =      Hash + ((Index + (int)hash_key.key) & i) + 7 * HashSection + i;
                     } else
-                        Bucket =      Hash + ((Index + (int)HashKey) & HashSection) + (depth-3) * HashSection;
-                    if(Bucket->l.Signature1 == HighKey && Bucket->l.Signature2 == HashKey)
+                        Bucket =      Hash + ((Index + (int)hash_key.key) & HashSection) + (depth-3) * HashSection;
+                    if(Bucket->l.Signature1 == hash_key.hi && Bucket->l.Signature2 == hash_key.key)
                     {   count += Bucket->l.longCount; accept[depth]++;
                         cache_hit = true; return Bucket;
                     }
                     reject[depth]++;
                     cache_hit = false; return Bucket;
                 }
-                Bucket =      Hash + ((Index + (int)HashKey) & HashSection) + (depth-3) * HashSection;
-            } else Bucket = ExtraHash + ((Index + (int)HashKey) & (XSIZE-1));
+                Bucket =      Hash + ((Index + (int)hash_key.key) & HashSection) + (depth-3) * HashSection;
+            } else Bucket = ExtraHash + ((Index + (int)hash_key.key) & (XSIZE-1));
 
-            store = (HashKey>>32) & 1;
-            if(Bucket->s.Signature[store] == HighKey && (Bucket->s.Extension[store] ^ (HashKey>>32)) < 2)
+            store = (hash_key.key>>32) & 1;
+            if(Bucket->s.Signature[store] == hash_key.hi && (Bucket->s.Extension[store] ^ (hash_key.key>>32)) < 2)
             {   count += Bucket->s.Count[store]; accept[depth]++;
                 Bucket->s.Extension[store] &= ~1;
                 Bucket->s.Extension[store^1] |= 1;
                 cache_hit = true; return Bucket;
             }
-            if(Bucket->s.Signature[store^1] == HighKey && (Bucket->s.Extension[store^1] ^ (HashKey>>32)) < 2)
+            if(Bucket->s.Signature[store^1] == hash_key.hi && (Bucket->s.Extension[store^1] ^ (hash_key.key>>32)) < 2)
             {   count += Bucket->s.Count[store^1]; accept[depth]++;
                 Bucket->s.Extension[store^1] &= ~1;
                 Bucket->s.Extension[store] |= 1;
@@ -995,12 +1007,12 @@ char Keys[1040];
     void hash_update(const int depth, union _bucket *const Bucket, const int store, const uint64_t count) {
         if(HashFlag) {
             if(true/*change to || for large entries only ->*/ && depth > 7) { //large entry
-                Bucket->l.Signature1 = HighKey;
-                Bucket->l.Signature2 = HashKey;
+                Bucket->l.Signature1 = hash_key.hi;
+                Bucket->l.Signature2 = hash_key.key;
                 Bucket->l.longCount  = count;
             } else { // packed entry
-                Bucket->s.Signature[store] = HighKey;
-                Bucket->s.Extension[store] = (HashKey>>32) & ~1; // erase low bit
+                Bucket->s.Signature[store] = hash_key.hi;
+                Bucket->s.Extension[store] = (hash_key.key>>32) & ~1; // erase low bit
                 Bucket->s.Count[store]     = count;
             }
         }
@@ -1400,7 +1412,7 @@ char Keys[1040];
     void perft(const int color, const Move last_move, const int depth, const int d) {
         // Save state.
         int SavRights = CasRights;
-        uint64_t OldKey = HashKey, OldHKey = HighKey;
+        HashAndHiKey orig_hash_key = hash_key;
 
         const int orig_msp = move_stack.msp; // Our area on move stack
 
@@ -1469,7 +1481,7 @@ char Keys[1040];
             undo_special_moves(color, move, piece, orig_piece);
 
             // Restore state prior to move
-            HashKey = OldKey; HighKey = OldHKey; CasRights = SavRights;
+            hash_key = orig_hash_key; CasRights = SavRights;
         }
 
         move_stack.pop_to(orig_msp); /* throw away moves */
