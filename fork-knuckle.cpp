@@ -46,14 +46,39 @@ struct HashAndHiKey {
     HashAndHiKey(): key(8729767686LL), hi(1234567890LL) {}
 };
 
+struct ZobristHash {
+    // Random seed table
+    char table[1040];
+    // Index into random table
+    char *indexes[2*NPCE];
+
+    HashAndHiKey key;
+
+    ZobristHash() {
+        for(int i=128; i<1040; i++) { table[i] = rand()>>6; }
+
+        // Why aren't the indexes initialised for all pieces - ah, it's initialised from FEN parsing, always.
+        indexes[DUMMY-WHITE] = table-0x22;
+    }
+
+    // Initialise the index for one piece
+    void init_index(const int color, const int piece, const int piece_kind) {
+        indexes[piece-WHITE]  = table + 128*piece_kind + (color&BLACK)/8 - 0x22;
+    }
+    
+
+    // Zobrist value for given piece and pos.
+    int64_t value(const int piece, const int pos) const { return *(int64_t *)(indexes[piece-WHITE] + pos); }
+};
+
 struct P {
     
 int rseed = 87105015;
     uint64_t accept[30], reject[30], hit[30], miss[30];
-char *Zob[2*NPCE];
+    //char *Zob[2*NPCE];
 
     // Zobrist key for given piece and pos.
-    int64_t Zobrist(const int piece, const int pos) const { return *(int64_t *)(Zob[piece-WHITE] + pos); }
+    //int64_t Zobrist(const int piece, const int pos) const { return *(int64_t *)(Zob[piece-WHITE] + pos); }
     
     unsigned char
         pc[NPCE*4+1], /* piece list, equivalenced with various piece info  */
@@ -78,9 +103,10 @@ char *Zob[2*NPCE];
     unsigned char *const DIR_TO_CAPT_CODE  = (brd+1+0xBC+0x77);      /* piece type that can reach this*/
     char          *const delta_vec  = ((char *) brd+1+0xBC+0xEF+0x77); /* step to bridge certain vector */
 
-    char noUnder = 0; // Non-zero to fobid under-promotions.
+    char noUnder = 0; // Non-zero to forbid under-promotions.
 
-char Keys[1040];
+    //char Keys[1040];
+    ZobristHash zobrist;
 
     MoveStack move_stack;
 
@@ -174,7 +200,7 @@ char Keys[1040];
         first_pawn_piece[BLACK]   = PAWNS_INDEX + BLACK;
 
         // Why isn't Zob initialised for all pieces - ah, it's initialised from FEN parsing, always.
-        Zob[DUMMY-WHITE] = Keys-0x22;
+        //Zob[DUMMY-WHITE] = Keys-0x22;
     }
 
     /**
@@ -304,7 +330,8 @@ char Keys[1040];
                     piece_to_pos[piece] = ((file +  16*row) & 0x77) + 0x22;
                     piece_to_kind[piece] = piece_kind;
                     piece_to_capt_code[piece] = KIND_TO_CAPT_CODE[piece_kind];
-                    Zob[piece-WHITE]  = Keys + 128*piece_kind + (color&BLACK)/8 - 0x22;
+                    zobrist.init_index(color, piece, piece_kind);
+                    //Zob[piece-WHITE]  = Keys + 128*piece_kind + (color&BLACK)/8 - 0x22;
                     piece_to_cstl[piece] = cc;
                     CasRights |= cc;       /* remember K & R on original location */
                     file++;
@@ -941,8 +968,8 @@ char Keys[1040];
     }
 
     void update_hash_key(const int piece, const int pos) { 
-        hash_key.key ^= Zobrist(piece, pos);
-        hash_key.hi ^= Zobrist(piece, pos+8);
+        hash_key.key ^= zobrist.value(piece, pos);
+        hash_key.hi  ^= zobrist.value(piece, pos+8);
     }
 
     void update_hash_key_for_promo(const int piece, const int newpiece, const int pos) {
@@ -1046,7 +1073,8 @@ char Keys[1040];
                 piece_to_pos[piece]  = from;
                 piece_to_kind[piece] = promo_kind;
                 piece_to_capt_code[piece] = KIND_TO_CAPT_CODE[promo_kind];
-                Zob[piece-WHITE]  = Keys + 128*promo_kind + (color&BLACK)/8 - 0x22;
+                zobrist.init_index(color, piece, promo_kind);
+                //Zob[piece-WHITE]  = Keys + 128*promo_kind + (color&BLACK)/8 - 0x22;
                 update_hash_key_for_promo(orig_piece, piece, from);
                 Index += 14457159; // Prevent clash with non-promotion moves.
             } else {
@@ -1610,7 +1638,7 @@ char Keys[1040];
         Hash = (union _bucket *) (((uint64_t)Hash + 63) & ~63);
         printf("Hash-table size = %x, Starts at %lx,section = %x\n", HashSize+1, (long)Hash, HashSection);
         HashFlag++;
-        for(int i=128; i<1040; i++) Keys[i] = rand()>>6;
+        //for(int i=128; i<1040; i++) Keys[i] = rand()>>6;
     }
 
     // @return color
